@@ -292,8 +292,9 @@ export class AuditsService {
     ]);
     const items = [];
     for (const r of rows) {
-      const { items: _items, ...summary } = await this.read(this.db, r.id);
-      items.push(summary);
+      const full = await this.read(this.db, r.id);
+      // The list shows the summary only; the lines are fetched one count at a time.
+      items.push({ ...full, items: undefined });
     }
     return toPage(items, totals[0]?.total ?? 0, query);
   }
