@@ -1,5 +1,6 @@
 import 'server-only';
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
+import { forwardedFor } from './client-ip';
 import { redirect } from 'next/navigation';
 import { ACCESS_COOKIE, API_URL } from './session';
 
@@ -30,6 +31,7 @@ export async function api<T>(
     method: init.method ?? 'GET',
     headers: {
       authorization: `Bearer ${token}`,
+      ...forwardedFor(await headers()),
       ...(init.body === undefined ? {} : { 'content-type': 'application/json' }),
     },
     body: init.body === undefined ? undefined : JSON.stringify(init.body),

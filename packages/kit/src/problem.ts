@@ -46,6 +46,9 @@ export const conflict = (code: string, title: string, detail?: string) =>
   new ProblemException(409, code, title, detail);
 export const unprocessable = (code: string, title: string, detail?: string) =>
   new ProblemException(422, code, title, detail);
+/** 429 with the number of seconds to wait, also sent as the Retry-After header. */
+export const tooManyRequests = (retryAfterSeconds: number, detail?: string) =>
+  new ProblemException(429, 'rate-limited', 'Too many requests', detail, { retryAfterSeconds });
 
 function statusTitle(status: number): string {
   const key = HttpStatus[status];
@@ -132,6 +135,8 @@ export class ProblemExceptionFilter implements ExceptionFilter {
     if (problem.status >= 500) {
       this.logger?.error({ err: exception, requestId }, 'unhandled error');
     }
+    const wait = (problem as unknown as Record<string, unknown>)['retryAfterSeconds'];
+    if (problem.status === 429 && typeof wait === 'number') res.set('Retry-After', String(wait));
     res.status(problem.status).type(PROBLEM_CONTENT_TYPE).send(problem);
   }
 }

@@ -4,6 +4,7 @@ export * from './logger.js';
 export * from './openapi.js';
 export * from './pagination.js';
 export * from './problem.js';
+export * from './rate-limit.js';
 export * from './request-context.js';
 export * from './setup.js';
 export * from './zod-pipe.js';

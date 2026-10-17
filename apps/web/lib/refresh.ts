@@ -9,7 +9,10 @@ import { API_URL, type TokenPair } from './session';
 const inflight = new Map<string, { at: number; result: Promise<TokenPair | null> }>();
 const REUSE_WINDOW_MS = 30_000;
 
-export function refreshTokens(refreshToken: string): Promise<TokenPair | null> {
+export function refreshTokens(
+  refreshToken: string,
+  extraHeaders: Record<string, string> = {},
+): Promise<TokenPair | null> {
   const now = Date.now();
   for (const [key, entry] of inflight) {
     if (now - entry.at > REUSE_WINDOW_MS) inflight.delete(key);
@@ -19,7 +22,7 @@ export function refreshTokens(refreshToken: string): Promise<TokenPair | null> {
 
   const result = fetch(`${API_URL}/api/v1/auth/refresh`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...extraHeaders },
     body: JSON.stringify({ refreshToken }),
     cache: 'no-store',
   })

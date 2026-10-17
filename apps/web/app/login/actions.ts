@@ -1,6 +1,7 @@
 'use server';
 
-import { cookies } from 'next/headers';
+import { cookies, headers } from 'next/headers';
+import { forwardedFor } from '@/lib/client-ip';
 import { redirect } from 'next/navigation';
 import {
   API_URL,
@@ -24,7 +25,7 @@ export async function login(_prev: LoginState, form: FormData): Promise<LoginSta
   try {
     res = await fetch(`${API_URL}/api/v1/auth/login`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...forwardedFor(await headers()) },
       body: JSON.stringify({ email, password }),
       cache: 'no-store',
     });
@@ -49,7 +50,7 @@ export async function logout(): Promise<void> {
     // Best effort: the API revokes the whole token family.
     await fetch(`${API_URL}/api/v1/auth/logout`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...forwardedFor(await headers()) },
       body: JSON.stringify({ refreshToken }),
       cache: 'no-store',
     }).catch(() => undefined);

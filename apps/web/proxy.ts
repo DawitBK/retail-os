@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { forwardedFor } from './lib/client-ip';
 import { refreshTokens } from './lib/refresh';
 import { ACCESS_COOKIE, REFRESH_COOKIE, accessCookie, refreshCookie } from './lib/session';
 
@@ -35,7 +36,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const tokens = await refreshTokens(refresh);
+  const tokens = await refreshTokens(refresh, forwardedFor(request.headers));
   if (!tokens) return toLogin();
 
   // Make the new token visible to this very request, and store it for the next ones.

@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { forwardedFor } from '@/lib/client-ip';
 import { ACCESS_COOKIE, API_URL } from '@/lib/session';
 
 /**
@@ -10,7 +11,10 @@ async function forward(request: NextRequest, ctx: { params: Promise<{ path: stri
   const token = request.cookies.get(ACCESS_COOKIE)?.value;
   if (!token) return NextResponse.json({ title: 'Signed out', status: 401 }, { status: 401 });
 
-  const headers: Record<string, string> = { authorization: `Bearer ${token}` };
+  const headers: Record<string, string> = {
+    authorization: `Bearer ${token}`,
+    ...forwardedFor(request.headers),
+  };
   const contentType = request.headers.get('content-type');
   if (contentType) headers['content-type'] = contentType;
   const idem = request.headers.get('idempotency-key');
