@@ -1,0 +1,23 @@
+{
+  "name": "@retail/config",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Shared TypeScript and ESLint presets",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    "./eslint": "./eslint.mjs",
+    "./tsconfig.node.json": "./tsconfig.node.json"
+  },
+  "files": [
+    "eslint.mjs",
+    "tsconfig.node.json"
+  ],
+  "peerDependencies": {
+    "@eslint/js": "^10.0.0",
+    "eslint": "^10.0.0",
+    "eslint-config-prettier": "^10.0.0",
+    "globals": "^17.0.0",
+    "typescript-eslint": "^8.0.0"
+  }
+}

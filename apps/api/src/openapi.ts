@@ -1,0 +1,725 @@
+import { Controller, Get } from '@nestjs/common';
+import {
+  OpenApiRegistry,
+  paginationQuerySchema,
+  type HttpMethod,
+  type RouteDef,
+} from '@retail/kit';
+import { z } from 'zod';
+import * as acc from './accounting/accounting.contract.js';
+import * as auth from './auth/auth.contract.js';
+import * as cat from './catalog/catalog.contract.js';
+import { Public } from './common/auth.js';
+import * as par from './parties/parties.contract.js';
+import * as pur from './purchases/purchases.contract.js';
+import * as sal from './sales/sales.contract.js';
+
+type Access = 'public' | 'staff' | 'owner' | 'managers' | 'bookkeepers' | 'till';
+
+const NOTE: Record<Access, string> = {
+  public: 'No sign-in needed.',
+  staff: 'Any signed-in staff member.',
+  owner: 'Owner only.',
+  managers: 'Owner or manager.',
+  bookkeepers: 'Owner, manager or accountant.',
+  till: 'Owner, manager or cashier.',
+};
+
+const idParams = z.object({ id: z.uuid() });
+const accessByOperation = new Map<string, Access>();
+const o = (schema: unknown) => schema as z.ZodObject;
+
+interface Spec {
+  access: Access;
+  method: HttpMethod;
+  path: string;
+  id: string;
+  summary: string;
+  tag: string;
+  params?: z.ZodObject;
+  query?: z.ZodObject;
+  headers?: z.ZodObject;
+  body?: z.ZodType;
+  ok?: [number, z.ZodType | null];
+}
+
+const route = (s: Spec): RouteDef => {
+  accessByOperation.set(s.id, s.access);
+  const [status, schema] = s.ok ?? [200, null];
+  return {
+    method: s.method,
+    path: `/api/v1${s.path}`,
+    operationId: s.id,
+    summary: `${s.summary}. ${NOTE[s.access]}`,
+    tags: [s.tag],
+    request: {
+      ...(s.params ? { params: s.params } : {}),
+      ...(s.query ? { query: s.query } : {}),
+      ...(s.headers ? { headers: s.headers } : {}),
+      ...(s.body ? { body: s.body } : {}),
+    },
+    responses: { [status]: { description: 'Success', ...(schema ? { schema } : {}) } },
+  };
+};
+
+const created = (schema: z.ZodType): [number, z.ZodType] => [201, schema];
+const ok = (schema: z.ZodType): [number, z.ZodType] => [200, schema];
+const none: [number, null] = [204, null];
+
+let cached: Record<string, unknown> | undefined;
+
+/** The OpenAPI document, built from the same schemas the controllers validate with. */
+export function openApiDocument(): Record<string, unknown> {
+  if (cached) return cached;
+  const registry = new OpenApiRegistry({
+    title: 'Retail OS API',
+    version: '0.1.0',
+    description:
+      'Point of sale, inventory (weighted-average cost) and double-entry accounting. Money is integer minor units (santim).',
+  });
+  const page = o(paginationQuerySchema);
+
+  const specs: Spec[] = [
+    // identity
+    {
+      access: 'public',
+      method: 'post',
+      path: '/auth/login',
+      id: 'login',
+      summary: 'Exchange credentials for tokens',
+      tag: 'auth',
+      body: auth.loginSchema,
+      ok: ok(auth.tokenPairSchema),
+    },
+    {
+      access: 'public',
+      method: 'post',
+      path: '/auth/refresh',
+      id: 'refresh',
+      summary: 'Rotate a refresh token (a reused token revokes the session)',
+      tag: 'auth',
+      body: auth.refreshSchema,
+      ok: ok(auth.tokenPairSchema),
+    },
+    {
+      access: 'public',
+      method: 'post',
+      path: '/auth/logout',
+      id: 'logout',
+      summary: 'Revoke the session of a refresh token',
+      tag: 'auth',
+      body: auth.refreshSchema,
+      ok: none,
+    },
+    {
+      access: 'staff',
+      method: 'get',
+      path: '/me',
+      id: 'getMe',
+      summary: 'The signed-in user',
+      tag: 'auth',
+      ok: ok(auth.userSchema),
+    },
+    {
+      access: 'staff',
+      method: 'post',
+      path: '/me/password',
+      id: 'changePassword',
+      summary: 'Change your password; every session is signed out',
+      tag: 'auth',
+      body: auth.changePasswordSchema,
+      ok: none,
+    },
+    {
+      access: 'owner',
+      method: 'post',
+      path: '/staff',
+      id: 'createStaff',
+      summary: 'Create a staff account',
+      tag: 'staff',
+      body: auth.createStaffSchema,
+      ok: created(auth.userSchema),
+    },
+    {
+      access: 'owner',
+      method: 'get',
+      path: '/staff',
+      id: 'listStaff',
+      summary: 'List staff accounts',
+      tag: 'staff',
+      query: auth.listStaffQuerySchema,
+      ok: ok(auth.staffPageSchema),
+    },
+    {
+      access: 'owner',
+      method: 'patch',
+      path: '/staff/{id}',
+      id: 'updateStaff',
+      summary: 'Update, re-role, disable or reset a staff account',
+      tag: 'staff',
+      params: idParams,
+      body: auth.updateStaffSchema,
+      ok: ok(auth.userSchema),
+    },
+
+    // catalogue
+    {
+      access: 'staff',
+      method: 'get',
+      path: '/categories',
+      id: 'listCategories',
+      summary: 'List categories',
+      tag: 'catalogue',
+      query: page,
+      ok: ok(cat.categoryPageSchema),
+    },
+    {
+      access: 'managers',
+      method: 'post',
+      path: '/categories',
+      id: 'createCategory',
+      summary: 'Create a category (its type decides the revenue and cost accounts)',
+      tag: 'catalogue',
+      body: cat.createCategorySchema,
+      ok: created(cat.categorySchema),
+    },
+    {
+      access: 'managers',
+      method: 'patch',
+      path: '/categories/{id}',
+      id: 'updateCategory',
+      summary: 'Rename a category',
+      tag: 'catalogue',
+      params: idParams,
+      body: cat.updateCategorySchema,
+      ok: ok(cat.categorySchema),
+    },
+    {
+      access: 'managers',
+      method: 'delete',
+      path: '/categories/{id}',
+      id: 'deleteCategory',
+      summary: 'Soft-delete an empty category',
+      tag: 'catalogue',
+      params: idParams,
+      ok: none,
+    },
+    {
+      access: 'staff',
+      method: 'get',
+      path: '/sub-categories',
+      id: 'listSubCategories',
+      summary: 'List sub-categories',
+      tag: 'catalogue',
+      query: cat.listSubCategoriesQuerySchema,
+      ok: ok(cat.subCategoryPageSchema),
+    },
+    {
+      access: 'managers',
+      method: 'post',
+      path: '/sub-categories',
+      id: 'createSubCategory',
+      summary: 'Create a sub-category',
+      tag: 'catalogue',
+      body: cat.createSubCategorySchema,
+      ok: created(cat.subCategorySchema),
+    },
+    {
+      access: 'managers',
+      method: 'patch',
+      path: '/sub-categories/{id}',
+      id: 'updateSubCategory',
+      summary: 'Rename a sub-category',
+      tag: 'catalogue',
+      params: idParams,
+      body: cat.updateSubCategorySchema,
+      ok: ok(cat.subCategorySchema),
+    },
+    {
+      access: 'managers',
+      method: 'delete',
+      path: '/sub-categories/{id}',
+      id: 'deleteSubCategory',
+      summary: 'Soft-delete an empty sub-category',
+      tag: 'catalogue',
+      params: idParams,
+      ok: none,
+    },
+    {
+      access: 'staff',
+      method: 'get',
+      path: '/brands',
+      id: 'listBrands',
+      summary: 'List brands',
+      tag: 'catalogue',
+      query: page,
+      ok: ok(cat.brandPageSchema),
+    },
+    {
+      access: 'managers',
+      method: 'post',
+      path: '/brands',
+      id: 'createBrand',
+      summary: 'Create a brand',
+      tag: 'catalogue',
+      body: cat.createBrandSchema,
+      ok: created(cat.brandSchema),
+    },
+    {
+      access: 'managers',
+      method: 'patch',
+      path: '/brands/{id}',
+      id: 'updateBrand',
+      summary: 'Update a brand',
+      tag: 'catalogue',
+      params: idParams,
+      body: cat.updateBrandSchema,
+      ok: ok(cat.brandSchema),
+    },
+    {
+      access: 'managers',
+      method: 'delete',
+      path: '/brands/{id}',
+      id: 'deleteBrand',
+      summary: 'Soft-delete an unused brand',
+      tag: 'catalogue',
+      params: idParams,
+      ok: none,
+    },
+    {
+      access: 'staff',
+      method: 'get',
+      path: '/products',
+      id: 'listProducts',
+      summary: 'Search products (stock, value and weighted average cost included)',
+      tag: 'catalogue',
+      query: o(cat.listProductsQuerySchema),
+      ok: ok(cat.productPageSchema),
+    },
+    {
+      access: 'staff',
+      method: 'get',
+      path: '/products/{id}',
+      id: 'getProduct',
+      summary: 'A product',
+      tag: 'catalogue',
+      params: idParams,
+      ok: ok(cat.productSchema),
+    },
+    {
+      access: 'managers',
+      method: 'post',
+      path: '/products',
+      id: 'createProduct',
+      summary: 'Create a product with no stock (stock arrives through purchases)',
+      tag: 'catalogue',
+      body: cat.createProductSchema,
+      ok: created(cat.productSchema),
+    },
+    {
+      access: 'managers',
+      method: 'patch',
+      path: '/products/{id}',
+      id: 'updateProduct',
+      summary: 'Update a product (never its stock)',
+      tag: 'catalogue',
+      params: idParams,
+      body: cat.updateProductSchema,
+      ok: ok(cat.productSchema),
+    },
+    {
+      access: 'managers',
+      method: 'delete',
+      path: '/products/{id}',
+      id: 'deleteProduct',
+      summary: 'Remove a product with no stock and no recent movements',
+      tag: 'catalogue',
+      params: idParams,
+      ok: none,
+    },
+    {
+      access: 'bookkeepers',
+      method: 'get',
+      path: '/products/{id}/movements',
+      id: 'listMovements',
+      summary: 'The inventory movements of a product',
+      tag: 'inventory',
+      params: idParams,
+      query: page,
+      ok: ok(cat.movementPageSchema),
+    },
+    {
+      access: 'bookkeepers',
+      method: 'get',
+      path: '/inventory/valuation',
+      id: 'inventoryValuation',
+      summary: 'Stock value per product, reconciled with the inventory account',
+      tag: 'inventory',
+      ok: ok(acc.inventoryValuationSchema),
+    },
+
+    // parties
+    {
+      access: 'staff',
+      method: 'post',
+      path: '/customers',
+      id: 'createCustomer',
+      summary: 'Create a customer',
+      tag: 'parties',
+      body: par.createCustomerSchema,
+      ok: created(par.customerSchema),
+    },
+    {
+      access: 'staff',
+      method: 'get',
+      path: '/customers',
+      id: 'listCustomers',
+      summary: 'List customers with what they owe',
+      tag: 'parties',
+      query: par.listCustomersQuerySchema,
+      ok: ok(par.customerPageSchema),
+    },
+    {
+      access: 'staff',
+      method: 'get',
+      path: '/customers/{id}',
+      id: 'getCustomer',
+      summary: 'A customer',
+      tag: 'parties',
+      params: idParams,
+      ok: ok(par.customerSchema),
+    },
+    {
+      access: 'managers',
+      method: 'patch',
+      path: '/customers/{id}',
+      id: 'updateCustomer',
+      summary: 'Update a customer, including the credit limit',
+      tag: 'parties',
+      params: idParams,
+      body: par.updateCustomerSchema,
+      ok: ok(par.customerSchema),
+    },
+    {
+      access: 'managers',
+      method: 'delete',
+      path: '/customers/{id}',
+      id: 'deleteCustomer',
+      summary: 'Soft-delete a customer who owes nothing',
+      tag: 'parties',
+      params: idParams,
+      ok: none,
+    },
+    {
+      access: 'managers',
+      method: 'post',
+      path: '/suppliers',
+      id: 'createSupplier',
+      summary: 'Create a supplier',
+      tag: 'parties',
+      body: par.createSupplierSchema,
+      ok: created(par.supplierSchema),
+    },
+    {
+      access: 'bookkeepers',
+      method: 'get',
+      path: '/suppliers',
+      id: 'listSuppliers',
+      summary: 'List suppliers with what we owe',
+      tag: 'parties',
+      query: par.listSuppliersQuerySchema,
+      ok: ok(par.supplierPageSchema),
+    },
+    {
+      access: 'bookkeepers',
+      method: 'get',
+      path: '/suppliers/{id}',
+      id: 'getSupplier',
+      summary: 'A supplier',
+      tag: 'parties',
+      params: idParams,
+      ok: ok(par.supplierSchema),
+    },
+    {
+      access: 'managers',
+      method: 'patch',
+      path: '/suppliers/{id}',
+      id: 'updateSupplier',
+      summary: 'Update a supplier',
+      tag: 'parties',
+      params: idParams,
+      body: par.updateSupplierSchema,
+      ok: ok(par.supplierSchema),
+    },
+    {
+      access: 'managers',
+      method: 'delete',
+      path: '/suppliers/{id}',
+      id: 'deleteSupplier',
+      summary: 'Soft-delete a supplier we owe nothing',
+      tag: 'parties',
+      params: idParams,
+      ok: none,
+    },
+
+    // sales
+    {
+      access: 'till',
+      method: 'post',
+      path: '/sales',
+      id: 'createSale',
+      summary: 'Record a sale; prices, cost and totals are settled server-side',
+      tag: 'sales',
+      headers: sal.idempotencyHeaderSchema,
+      body: sal.createSaleSchema,
+      ok: created(sal.saleSchema),
+    },
+    {
+      access: 'staff',
+      method: 'get',
+      path: '/sales',
+      id: 'listSales',
+      summary: 'List sales (cashiers see their own)',
+      tag: 'sales',
+      query: o(sal.listSalesQuerySchema),
+      ok: ok(sal.salePageSchema),
+    },
+    {
+      access: 'staff',
+      method: 'get',
+      path: '/sales/{id}',
+      id: 'getSale',
+      summary: 'A sale with its lines and journal entry',
+      tag: 'sales',
+      params: idParams,
+      ok: ok(sal.saleSchema),
+    },
+    {
+      access: 'managers',
+      method: 'post',
+      path: '/sales/{id}/void',
+      id: 'voidSale',
+      summary: 'Void a sale: stock returns at its cost and the books are reversed',
+      tag: 'sales',
+      params: idParams,
+      body: sal.voidSaleSchema,
+      ok: ok(sal.saleSchema),
+    },
+    {
+      access: 'till',
+      method: 'post',
+      path: '/sales/{id}/payments',
+      id: 'receiveSalePayment',
+      summary: 'A customer pays down a credit sale',
+      tag: 'sales',
+      params: idParams,
+      body: sal.createReceiptSchema,
+      ok: created(sal.receiptSchema),
+    },
+
+    // purchases
+    {
+      access: 'managers',
+      method: 'post',
+      path: '/purchases',
+      id: 'createPurchase',
+      summary: 'Order stock from a supplier',
+      tag: 'purchases',
+      body: pur.createPurchaseSchema,
+      ok: created(pur.purchaseSchema),
+    },
+    {
+      access: 'bookkeepers',
+      method: 'get',
+      path: '/purchases',
+      id: 'listPurchases',
+      summary: 'List purchase orders',
+      tag: 'purchases',
+      query: pur.listPurchasesQuerySchema,
+      ok: ok(pur.purchasePageSchema),
+    },
+    {
+      access: 'bookkeepers',
+      method: 'get',
+      path: '/purchases/{id}',
+      id: 'getPurchase',
+      summary: 'A purchase order',
+      tag: 'purchases',
+      params: idParams,
+      ok: ok(pur.purchaseSchema),
+    },
+    {
+      access: 'managers',
+      method: 'post',
+      path: '/purchases/{id}/receive',
+      id: 'receivePurchase',
+      summary:
+        'Receive goods (partial is fine): stock and weighted average cost move, payables grow',
+      tag: 'purchases',
+      params: idParams,
+      body: pur.receivePurchaseSchema,
+      ok: ok(pur.purchaseSchema),
+    },
+    {
+      access: 'managers',
+      method: 'post',
+      path: '/purchases/{id}/cancel',
+      id: 'cancelPurchase',
+      summary: 'Cancel an order nothing has arrived for',
+      tag: 'purchases',
+      params: idParams,
+      ok: ok(pur.purchaseSchema),
+    },
+    {
+      access: 'bookkeepers',
+      method: 'post',
+      path: '/purchases/{id}/payments',
+      id: 'paySupplier',
+      summary: 'Pay a supplier for goods received',
+      tag: 'purchases',
+      params: idParams,
+      body: pur.createSupplierPaymentSchema,
+      ok: created(pur.supplierPaymentSchema),
+    },
+
+    // accounting
+    {
+      access: 'owner',
+      method: 'post',
+      path: '/opening-balances',
+      id: 'openBooks',
+      summary: 'Open the books once with cash, bank and stock against owner capital',
+      tag: 'accounting',
+      body: acc.openingBalanceSchema,
+      ok: created(acc.openingResultSchema),
+    },
+    {
+      access: 'bookkeepers',
+      method: 'get',
+      path: '/accounting/accounts',
+      id: 'chartOfAccounts',
+      summary: 'The chart of accounts with balances',
+      tag: 'accounting',
+      ok: ok(z.array(acc.accountSchema)),
+    },
+    {
+      access: 'bookkeepers',
+      method: 'get',
+      path: '/accounting/journal',
+      id: 'listJournal',
+      summary: 'The journal, newest first',
+      tag: 'accounting',
+      query: acc.listJournalQuerySchema,
+      ok: ok(acc.journalPageSchema),
+    },
+    {
+      access: 'bookkeepers',
+      method: 'get',
+      path: '/accounting/ledger/{code}',
+      id: 'ledger',
+      summary: 'An account ledger with a running balance',
+      tag: 'accounting',
+      params: z.object({ code: z.string() }),
+      query: acc.ledgerQuerySchema,
+      ok: ok(acc.ledgerSchema),
+    },
+    {
+      access: 'bookkeepers',
+      method: 'get',
+      path: '/accounting/trial-balance',
+      id: 'trialBalance',
+      summary: 'Trial balance for a period (the debits equal the credits)',
+      tag: 'accounting',
+      query: z.object({ from: z.iso.date(), to: z.iso.date() }),
+      ok: ok(acc.trialBalanceSchema),
+    },
+    {
+      access: 'bookkeepers',
+      method: 'get',
+      path: '/accounting/profit-loss',
+      id: 'profitLoss',
+      summary: 'Profit and loss for a period',
+      tag: 'accounting',
+      query: z.object({ from: z.iso.date(), to: z.iso.date() }),
+      ok: ok(acc.profitLossSchema),
+    },
+    {
+      access: 'bookkeepers',
+      method: 'get',
+      path: '/accounting/balance-sheet',
+      id: 'balanceSheet',
+      summary: 'Balance sheet as of a day (assets equal liabilities plus equity)',
+      tag: 'accounting',
+      query: acc.asOfQuerySchema,
+      ok: ok(acc.balanceSheetSchema),
+    },
+    {
+      access: 'bookkeepers',
+      method: 'post',
+      path: '/expenses',
+      id: 'createExpense',
+      summary: 'Record an expense and post it',
+      tag: 'accounting',
+      body: acc.createExpenseSchema,
+      ok: created(acc.expenseSchema),
+    },
+    {
+      access: 'bookkeepers',
+      method: 'get',
+      path: '/expenses',
+      id: 'listExpenses',
+      summary: 'List expenses',
+      tag: 'accounting',
+      query: acc.listExpensesQuerySchema,
+      ok: ok(acc.expensePageSchema),
+    },
+    {
+      access: 'bookkeepers',
+      method: 'get',
+      path: '/expenses/{id}',
+      id: 'getExpense',
+      summary: 'An expense',
+      tag: 'accounting',
+      params: idParams,
+      ok: ok(acc.expenseSchema),
+    },
+    {
+      access: 'managers',
+      method: 'post',
+      path: '/expenses/{id}/void',
+      id: 'voidExpense',
+      summary: 'Void an expense (the reverse entry is posted, nothing is deleted)',
+      tag: 'accounting',
+      params: idParams,
+      body: acc.voidExpenseSchema,
+      ok: ok(acc.expenseSchema),
+    },
+  ];
+  for (const s of specs) registry.add(route(s));
+
+  const doc = registry.document() as {
+    paths: Record<string, Record<string, Record<string, unknown>>>;
+  };
+  for (const methods of Object.values(doc.paths)) {
+    for (const op of Object.values(methods)) {
+      const access = accessByOperation.get(op['operationId'] as string);
+      if (access && access !== 'public') op['security'] = [{ bearerAuth: [] }];
+    }
+  }
+  cached = {
+    ...doc,
+    components: {
+      securitySchemes: { bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' } },
+    },
+  };
+  return cached;
+}
+
+@Controller()
+export class OpenApiController {
+  @Public()
+  @Get('openapi.json')
+  document() {
+    return openApiDocument();
+  }
+}
