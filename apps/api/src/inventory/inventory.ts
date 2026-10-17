@@ -8,7 +8,12 @@ const INCOMING: ReadonlySet<MovementType> = new Set([
   'OPENING_BALANCE',
   'PURCHASE_RECEIPT',
   'SALE_VOID',
+  'SALE_RETURN',
+  'STOCK_ADJUSTMENT_INCREASE',
 ]);
+
+/** Only goods that actually arrive from outside count as "restocked" (not a customer's return). */
+const RESTOCKING: ReadonlySet<MovementType> = new Set(['OPENING_BALANCE', 'PURCHASE_RECEIPT']);
 
 /**
  * What it costs to take `qty` units out of a stock of `stock` units worth `value`: the average
@@ -20,6 +25,12 @@ export function issueCost(value: number, stock: number, qty: number): number {
   if (qty === stock) return value;
   const cost = (BigInt(value) * BigInt(qty) + BigInt(stock) / 2n) / BigInt(stock);
   return Number(cost);
+}
+
+/** What `qty` units cost at the current average (no last-unit rule): used to value found stock. */
+export function averageCost(value: number, stock: number, qty: number): number {
+  if (stock <= 0) return 0;
+  return Number((BigInt(value) * BigInt(qty) + BigInt(stock) / 2n) / BigInt(stock));
 }
 
 export interface MovementResult {
@@ -99,7 +110,7 @@ export async function applyMovement(tx: Tx, input: MovementInput): Promise<Movem
     .set({
       currentStock: stockAfter,
       stockValueMinor: valueAfter,
-      ...(incoming && input.type !== 'SALE_VOID' ? { lastRestockedAt: sql`now()` } : {}),
+      ...(RESTOCKING.has(input.type) ? { lastRestockedAt: sql`now()` } : {}),
       ...(input.type === 'SALE' ? { lastSoldAt: sql`now()` } : {}),
       updatedAt: sql`now()`,
     })

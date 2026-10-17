@@ -1,6 +1,9 @@
+CREATE SEQUENCE "public"."stock_audit_number_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1;--> statement-breakpoint
+CREATE SEQUENCE "public"."damage_number_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1;--> statement-breakpoint
 CREATE SEQUENCE "public"."expense_number_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1;--> statement-breakpoint
 CREATE SEQUENCE "public"."journal_number_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1;--> statement-breakpoint
 CREATE SEQUENCE "public"."purchase_number_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1;--> statement-breakpoint
+CREATE SEQUENCE "public"."return_number_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1;--> statement-breakpoint
 CREATE SEQUENCE "public"."sale_number_seq" INCREMENT BY 1 MINVALUE 1 MAXVALUE 9223372036854775807 START WITH 1 CACHE 1;--> statement-breakpoint
 CREATE TABLE "accounts" (
 	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
@@ -71,6 +74,28 @@ CREATE TABLE "customers" (
 	CONSTRAINT "customers_name_not_blank" CHECK (length(btrim("customers"."name")) > 0)
 );
 --> statement-breakpoint
+CREATE TABLE "damage_records" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"number" text NOT NULL,
+	"product_id" uuid NOT NULL,
+	"kind" text NOT NULL,
+	"quantity" integer NOT NULL,
+	"cause" text NOT NULL,
+	"status" text DEFAULT 'PENDING' NOT NULL,
+	"reported_by" uuid NOT NULL,
+	"decided_by" uuid,
+	"decided_at" timestamp with time zone,
+	"decision_note" text,
+	"loss_minor" bigint,
+	"journal_entry_id" uuid,
+	"version" integer DEFAULT 1 NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "damage_records_kind_valid" CHECK ("damage_records"."kind" in ('DAMAGE', 'WRITE_OFF')),
+	CONSTRAINT "damage_records_status_valid" CHECK ("damage_records"."status" in ('PENDING', 'APPROVED', 'REJECTED')),
+	CONSTRAINT "damage_records_qty_positive" CHECK ("damage_records"."quantity" > 0),
+	CONSTRAINT "damage_records_separation" CHECK ("damage_records"."decided_by" is null or "damage_records"."decided_by" <> "damage_records"."reported_by")
+);
+--> statement-breakpoint
 CREATE TABLE "expenses" (
 	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
 	"number" text NOT NULL,
@@ -117,7 +142,7 @@ CREATE TABLE "inventory_movements" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "inventory_movements_qty_positive" CHECK ("inventory_movements"."quantity" > 0),
 	CONSTRAINT "inventory_movements_stock_non_negative" CHECK ("inventory_movements"."stock_after" >= 0),
-	CONSTRAINT "inventory_movements_type_valid" CHECK ("inventory_movements"."movement_type" in ('OPENING_BALANCE', 'PURCHASE_RECEIPT', 'SALE', 'SALE_VOID'))
+	CONSTRAINT "inventory_movements_type_valid" CHECK ("inventory_movements"."movement_type" in ('OPENING_BALANCE', 'PURCHASE_RECEIPT', 'SALE', 'SALE_VOID', 'SALE_RETURN', 'DAMAGE_LOSS', 'WRITE_OFF', 'STOCK_ADJUSTMENT_INCREASE', 'STOCK_ADJUSTMENT_DECREASE'))
 );
 --> statement-breakpoint
 CREATE TABLE "journal_entries" (
@@ -244,9 +269,39 @@ CREATE TABLE "sale_items" (
 	"discount_minor" bigint DEFAULT 0 NOT NULL,
 	"line_total_minor" bigint NOT NULL,
 	"line_cogs_minor" bigint NOT NULL,
+	"returned_qty" integer DEFAULT 0 NOT NULL,
 	CONSTRAINT "sale_items_qty_positive" CHECK ("sale_items"."quantity" > 0),
+	CONSTRAINT "sale_items_returned_within_sold" CHECK ("sale_items"."returned_qty" >= 0 and "sale_items"."returned_qty" <= "sale_items"."quantity"),
 	CONSTRAINT "sale_items_total_matches" CHECK ("sale_items"."line_total_minor" = "sale_items"."unit_price_minor" * "sale_items"."quantity" - "sale_items"."discount_minor"),
 	CONSTRAINT "sale_items_amounts_non_negative" CHECK ("sale_items"."line_total_minor" >= 0 and "sale_items"."line_cogs_minor" >= 0)
+);
+--> statement-breakpoint
+CREATE TABLE "sale_return_items" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"return_id" uuid NOT NULL,
+	"sale_item_id" uuid NOT NULL,
+	"product_id" uuid NOT NULL,
+	"quantity" integer NOT NULL,
+	"restockable" boolean NOT NULL,
+	"refund_minor" bigint NOT NULL,
+	"cost_minor" bigint NOT NULL,
+	CONSTRAINT "sale_return_items_qty_positive" CHECK ("sale_return_items"."quantity" > 0),
+	CONSTRAINT "sale_return_items_amounts" CHECK ("sale_return_items"."refund_minor" >= 0 and "sale_return_items"."cost_minor" >= 0)
+);
+--> statement-breakpoint
+CREATE TABLE "sale_returns" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"number" text NOT NULL,
+	"sale_id" uuid NOT NULL,
+	"reason" text NOT NULL,
+	"refund_minor" bigint NOT NULL,
+	"applied_to_receivable_minor" bigint DEFAULT 0 NOT NULL,
+	"refund_method" text,
+	"journal_entry_id" uuid,
+	"processed_by" uuid NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "sale_returns_refund_positive" CHECK ("sale_returns"."refund_minor" > 0),
+	CONSTRAINT "sale_returns_split_valid" CHECK ("sale_returns"."applied_to_receivable_minor" >= 0 and "sale_returns"."applied_to_receivable_minor" <= "sale_returns"."refund_minor")
 );
 --> statement-breakpoint
 CREATE TABLE "sales" (
@@ -290,6 +345,33 @@ CREATE TABLE "settlements" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "settlements_amount_positive" CHECK ("settlements"."amount_minor" > 0),
 	CONSTRAINT "settlements_target" CHECK (("settlements"."kind" = 'CUSTOMER_RECEIPT' and "settlements"."sale_id" is not null and "settlements"."purchase_id" is null) or ("settlements"."kind" = 'SUPPLIER_PAYMENT' and "settlements"."purchase_id" is not null and "settlements"."sale_id" is null))
+);
+--> statement-breakpoint
+CREATE TABLE "stock_audit_items" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"audit_id" uuid NOT NULL,
+	"product_id" uuid NOT NULL,
+	"system_qty" integer,
+	"physical_qty" integer,
+	"counted_by" uuid,
+	"counted_at" timestamp with time zone,
+	"adjustment_value_minor" bigint,
+	CONSTRAINT "stock_audit_items_counts" CHECK ("stock_audit_items"."physical_qty" is null or "stock_audit_items"."physical_qty" >= 0)
+);
+--> statement-breakpoint
+CREATE TABLE "stock_audits" (
+	"id" uuid PRIMARY KEY DEFAULT uuidv7() NOT NULL,
+	"number" text NOT NULL,
+	"status" text DEFAULT 'IN_PROGRESS' NOT NULL,
+	"notes" text,
+	"started_by" uuid NOT NULL,
+	"submitted_at" timestamp with time zone,
+	"approved_by" uuid,
+	"approved_at" timestamp with time zone,
+	"version" integer DEFAULT 1 NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "stock_audits_status_valid" CHECK ("stock_audits"."status" in ('IN_PROGRESS', 'PENDING_APPROVAL', 'APPROVED', 'CANCELLED')),
+	CONSTRAINT "stock_audits_separation" CHECK ("stock_audits"."approved_by" is null or "stock_audits"."approved_by" <> "stock_audits"."started_by")
 );
 --> statement-breakpoint
 CREATE TABLE "sub_categories" (
@@ -338,6 +420,10 @@ CREATE TABLE "users" (
 	CONSTRAINT "users_email_lowercase" CHECK ("users"."email" = lower("users"."email"))
 );
 --> statement-breakpoint
+ALTER TABLE "damage_records" ADD CONSTRAINT "damage_records_product_id_products_id_fk" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "damage_records" ADD CONSTRAINT "damage_records_reported_by_users_id_fk" FOREIGN KEY ("reported_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "damage_records" ADD CONSTRAINT "damage_records_decided_by_users_id_fk" FOREIGN KEY ("decided_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "damage_records" ADD CONSTRAINT "damage_records_journal_entry_id_journal_entries_id_fk" FOREIGN KEY ("journal_entry_id") REFERENCES "public"."journal_entries"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "expenses" ADD CONSTRAINT "expenses_journal_entry_id_journal_entries_id_fk" FOREIGN KEY ("journal_entry_id") REFERENCES "public"."journal_entries"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "expenses" ADD CONSTRAINT "expenses_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "expenses" ADD CONSTRAINT "expenses_voided_by_users_id_fk" FOREIGN KEY ("voided_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -357,6 +443,12 @@ ALTER TABLE "purchases" ADD CONSTRAINT "purchases_created_by_users_id_fk" FOREIG
 ALTER TABLE "refresh_tokens" ADD CONSTRAINT "refresh_tokens_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sale_items" ADD CONSTRAINT "sale_items_sale_id_sales_id_fk" FOREIGN KEY ("sale_id") REFERENCES "public"."sales"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sale_items" ADD CONSTRAINT "sale_items_product_id_products_id_fk" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "sale_return_items" ADD CONSTRAINT "sale_return_items_return_id_sale_returns_id_fk" FOREIGN KEY ("return_id") REFERENCES "public"."sale_returns"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "sale_return_items" ADD CONSTRAINT "sale_return_items_sale_item_id_sale_items_id_fk" FOREIGN KEY ("sale_item_id") REFERENCES "public"."sale_items"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "sale_return_items" ADD CONSTRAINT "sale_return_items_product_id_products_id_fk" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "sale_returns" ADD CONSTRAINT "sale_returns_sale_id_sales_id_fk" FOREIGN KEY ("sale_id") REFERENCES "public"."sales"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "sale_returns" ADD CONSTRAINT "sale_returns_journal_entry_id_journal_entries_id_fk" FOREIGN KEY ("journal_entry_id") REFERENCES "public"."journal_entries"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "sale_returns" ADD CONSTRAINT "sale_returns_processed_by_users_id_fk" FOREIGN KEY ("processed_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sales" ADD CONSTRAINT "sales_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sales" ADD CONSTRAINT "sales_journal_entry_id_journal_entries_id_fk" FOREIGN KEY ("journal_entry_id") REFERENCES "public"."journal_entries"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sales" ADD CONSTRAINT "sales_created_by_users_id_fk" FOREIGN KEY ("created_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
@@ -364,12 +456,19 @@ ALTER TABLE "sales" ADD CONSTRAINT "sales_voided_by_users_id_fk" FOREIGN KEY ("v
 ALTER TABLE "settlements" ADD CONSTRAINT "settlements_sale_id_sales_id_fk" FOREIGN KEY ("sale_id") REFERENCES "public"."sales"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "settlements" ADD CONSTRAINT "settlements_journal_entry_id_journal_entries_id_fk" FOREIGN KEY ("journal_entry_id") REFERENCES "public"."journal_entries"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "settlements" ADD CONSTRAINT "settlements_recorded_by_users_id_fk" FOREIGN KEY ("recorded_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "stock_audit_items" ADD CONSTRAINT "stock_audit_items_audit_id_stock_audits_id_fk" FOREIGN KEY ("audit_id") REFERENCES "public"."stock_audits"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "stock_audit_items" ADD CONSTRAINT "stock_audit_items_product_id_products_id_fk" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "stock_audit_items" ADD CONSTRAINT "stock_audit_items_counted_by_users_id_fk" FOREIGN KEY ("counted_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "stock_audits" ADD CONSTRAINT "stock_audits_started_by_users_id_fk" FOREIGN KEY ("started_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "stock_audits" ADD CONSTRAINT "stock_audits_approved_by_users_id_fk" FOREIGN KEY ("approved_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "sub_categories" ADD CONSTRAINT "sub_categories_category_id_categories_id_fk" FOREIGN KEY ("category_id") REFERENCES "public"."categories"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "accounts_code_uq" ON "accounts" USING btree ("code");--> statement-breakpoint
 CREATE INDEX "audit_log_entity_idx" ON "audit_log" USING btree ("entity_type","entity_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "brands_name_live_uq" ON "brands" USING btree (lower("name")) WHERE "brands"."deleted_at" is null;--> statement-breakpoint
 CREATE UNIQUE INDEX "categories_name_live_uq" ON "categories" USING btree (lower("name")) WHERE "categories"."deleted_at" is null;--> statement-breakpoint
 CREATE INDEX "customers_name_idx" ON "customers" USING btree (lower("name"));--> statement-breakpoint
+CREATE UNIQUE INDEX "damage_records_number_uq" ON "damage_records" USING btree ("number");--> statement-breakpoint
+CREATE INDEX "damage_records_status_idx" ON "damage_records" USING btree ("status","created_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "expenses_number_uq" ON "expenses" USING btree ("number");--> statement-breakpoint
 CREATE INDEX "expenses_date_idx" ON "expenses" USING btree ("expense_date");--> statement-breakpoint
 CREATE INDEX "inventory_movements_product_idx" ON "inventory_movements" USING btree ("product_id","created_at");--> statement-breakpoint
@@ -392,11 +491,16 @@ CREATE INDEX "refresh_tokens_family_idx" ON "refresh_tokens" USING btree ("famil
 CREATE INDEX "refresh_tokens_user_idx" ON "refresh_tokens" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX "sale_items_sale_idx" ON "sale_items" USING btree ("sale_id");--> statement-breakpoint
 CREATE INDEX "sale_items_product_idx" ON "sale_items" USING btree ("product_id");--> statement-breakpoint
+CREATE INDEX "sale_return_items_return_idx" ON "sale_return_items" USING btree ("return_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "sale_returns_number_uq" ON "sale_returns" USING btree ("number");--> statement-breakpoint
+CREATE INDEX "sale_returns_sale_idx" ON "sale_returns" USING btree ("sale_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "sales_number_uq" ON "sales" USING btree ("number");--> statement-breakpoint
 CREATE INDEX "sales_customer_idx" ON "sales" USING btree ("customer_id","sale_date");--> statement-breakpoint
 CREATE INDEX "sales_date_idx" ON "sales" USING btree ("sale_date");--> statement-breakpoint
 CREATE INDEX "settlements_sale_idx" ON "settlements" USING btree ("sale_id");--> statement-breakpoint
 CREATE INDEX "settlements_purchase_idx" ON "settlements" USING btree ("purchase_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "stock_audit_items_unique" ON "stock_audit_items" USING btree ("audit_id","product_id");--> statement-breakpoint
+CREATE UNIQUE INDEX "stock_audits_number_uq" ON "stock_audits" USING btree ("number");--> statement-breakpoint
 CREATE UNIQUE INDEX "sub_categories_name_live_uq" ON "sub_categories" USING btree ("category_id",lower("name")) WHERE "sub_categories"."deleted_at" is null;--> statement-breakpoint
 CREATE UNIQUE INDEX "suppliers_name_live_uq" ON "suppliers" USING btree (lower("name")) WHERE "suppliers"."deleted_at" is null;--> statement-breakpoint
 CREATE UNIQUE INDEX "users_email_live_uq" ON "users" USING btree ("email") WHERE "users"."deleted_at" is null;

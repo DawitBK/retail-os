@@ -65,6 +65,7 @@ const toSaleDto = (
       ? row.totalMinor - row.amountPaidMinor
       : 0,
   items: items.map((i) => ({
+    id: i.id,
     productId: i.productId,
     productName: i.productName,
     quantity: i.quantity,
@@ -387,6 +388,13 @@ export class SalesService {
         .from(saleItems)
         .where(eq(saleItems.saleId, id))
         .orderBy(asc(saleItems.productId));
+      if (items.some((i) => i.returnedQty > 0)) {
+        throw conflict(
+          'sale-has-returns',
+          'Goods were returned against this sale',
+          'A sale with returns cannot be voided; the returns already reversed part of it',
+        );
+      }
       for (const item of items) {
         await applyMovement(tx, {
           productId: item.productId,

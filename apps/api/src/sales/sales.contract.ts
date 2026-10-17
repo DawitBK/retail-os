@@ -16,6 +16,7 @@ export const idempotencyHeaderSchema = z.object({
 const minor = z.number().int().min(0).max(1_000_000_000_00);
 
 export const saleItemSchema = z.object({
+  id: z.uuid().describe('Needed to return goods from this line'),
   productId: z.uuid(),
   productName: z.string(),
   quantity: z.number().int().min(1),

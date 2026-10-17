@@ -7,6 +7,7 @@ import { CatalogModule } from './catalog/catalog.module.js';
 import type { AuthConfig } from './common/auth.js';
 import { DbModule, POOL } from './db/db.module.js';
 import { OpenApiController } from './openapi.js';
+import { OperationsModule } from './operations/operations.module.js';
 import { PartiesModule } from './parties/parties.module.js';
 import { PurchasesModule } from './purchases/purchases.module.js';
 import { SalesModule } from './sales/sales.module.js';
@@ -32,6 +33,7 @@ export class AppModule {
         SalesModule,
         PurchasesModule,
         AccountingModule,
+        OperationsModule,
       ],
       controllers: [OpenApiController],
     };

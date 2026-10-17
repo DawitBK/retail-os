@@ -20,17 +20,22 @@ Mobile money is reconciled with the bank, so it posts to 1010.
 
 ## What each event posts
 
-| Event                       | Debit                                                     | Credit                                      |
-| --------------------------- | --------------------------------------------------------- | ------------------------------------------- |
-| Cash, bank or mobile sale   | 1000 or 1010 for the total                                | 4000 / 4010 revenue per product type        |
-| ...and its cost, same entry | 5000 / 5010 cost of goods sold                            | 1200 inventory                              |
-| Credit sale                 | 1100 receivable for the unpaid part, 1000 for any deposit | 4000 / 4010 (and the cost as above)         |
-| Customer pays a credit sale | 1000 or 1010                                              | 1100                                        |
-| Goods received              | 1200 inventory                                            | 2000 payables                               |
-| Supplier payment            | 2000 payables                                             | 1000 or 1010                                |
-| Expense                     | 6xxx expense account                                      | 1000 or 1010                                |
-| Opening balances            | 1000, 1010, 1200                                          | 3000 owner's capital (the balancing figure) |
-| Void of any of the above    | the mirror image of the original entry                    | (the original is marked VOIDED; both stay)  |
+| Event                               | Debit                                                     | Credit                                                                                   |
+| ----------------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Cash, bank or mobile sale           | 1000 or 1010 for the total                                | 4000 / 4010 revenue per product type                                                     |
+| ...and its cost, same entry         | 5000 / 5010 cost of goods sold                            | 1200 inventory                                                                           |
+| Credit sale                         | 1100 receivable for the unpaid part, 1000 for any deposit | 4000 / 4010 (and the cost as above)                                                      |
+| Customer pays a credit sale         | 1000 or 1010                                              | 1100                                                                                     |
+| Goods received                      | 1200 inventory                                            | 2000 payables                                                                            |
+| Supplier payment                    | 2000 payables                                             | 1000 or 1010                                                                             |
+| Expense                             | 6xxx expense account                                      | 1000 or 1010                                                                             |
+| Opening balances                    | 1000, 1010, 1200                                          | 3000 owner's capital (the balancing figure)                                              |
+| Sale return, fit to sell again      | 4100 returns for the refund; 1200 inventory for the cost  | 1000/1010 cash out and/or 1100 (a debt cancelled); 5000/5010 cost of goods sold reversed |
+| Sale return, scrap                  | 4100 returns for the refund                               | 1000/1010 and/or 1100 (cost of goods sold stands, the goods are lost)                    |
+| Damage or write-off (approved)      | 6100 or 6110 loss at stock cost                           | 1200 inventory                                                                           |
+| Stock count, shortage (approved)    | 6120 shrinkage                                            | 1200 inventory                                                                           |
+| Stock count, found stock (approved) | 1200 inventory at average cost                            | 6120 shrinkage (net of the shortages, one entry)                                         |
+| Void of any of the above            | the mirror image of the original entry                    | (the original is marked VOIDED; both stay)                                               |
 
 Revenue and its cost of goods are always recognised in the same entry (the matching principle):
 there is no code path that posts one without the other.

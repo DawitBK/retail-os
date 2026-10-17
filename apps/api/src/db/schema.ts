@@ -41,7 +41,17 @@ export const ACCOUNT_TYPES = [
   'COGS',
   'EXPENSE',
 ] as const;
-export const MOVEMENT_TYPES = ['OPENING_BALANCE', 'PURCHASE_RECEIPT', 'SALE', 'SALE_VOID'] as const;
+export const MOVEMENT_TYPES = [
+  'OPENING_BALANCE',
+  'PURCHASE_RECEIPT',
+  'SALE',
+  'SALE_VOID',
+  'SALE_RETURN',
+  'DAMAGE_LOSS',
+  'WRITE_OFF',
+  'STOCK_ADJUSTMENT_INCREASE',
+  'STOCK_ADJUSTMENT_DECREASE',
+] as const;
 export type MovementType = (typeof MOVEMENT_TYPES)[number];
 export const ENTRY_STATUSES = ['POSTED', 'VOIDED'] as const;
 
@@ -402,7 +412,7 @@ export const inventoryMovements = pgTable(
     check('inventory_movements_stock_non_negative', sql`${t.stockAfter} >= 0`),
     check(
       'inventory_movements_type_valid',
-      sql`${t.movementType} in ('OPENING_BALANCE', 'PURCHASE_RECEIPT', 'SALE', 'SALE_VOID')`,
+      sql`${t.movementType} in ('OPENING_BALANCE', 'PURCHASE_RECEIPT', 'SALE', 'SALE_VOID', 'SALE_RETURN', 'DAMAGE_LOSS', 'WRITE_OFF', 'STOCK_ADJUSTMENT_INCREASE', 'STOCK_ADJUSTMENT_DECREASE')`,
     ),
     index('inventory_movements_product_idx').on(t.productId, t.createdAt),
     index('inventory_movements_reference_idx').on(t.referenceType, t.referenceId),
@@ -476,9 +486,15 @@ export const saleItems = pgTable(
     lineTotalMinor: money('line_total_minor').notNull(),
     /** Cost of the units sold, taken from the inventory value at that moment and never recomputed. */
     lineCogsMinor: money('line_cogs_minor').notNull(),
+    /** Units already given back; a line can never be returned past what was sold. */
+    returnedQty: integer('returned_qty').notNull().default(0),
   },
   (t) => [
     check('sale_items_qty_positive', sql`${t.quantity} > 0`),
+    check(
+      'sale_items_returned_within_sold',
+      sql`${t.returnedQty} >= 0 and ${t.returnedQty} <= ${t.quantity}`,
+    ),
     check(
       'sale_items_total_matches',
       sql`${t.lineTotalMinor} = ${t.unitPriceMinor} * ${t.quantity} - ${t.discountMinor}`,
@@ -626,6 +642,165 @@ export const expenses = pgTable(
   ],
 );
 
+// ---------------------------------------------------------------- returns, damage, audits
+
+export const DAMAGE_KINDS = ['DAMAGE', 'WRITE_OFF'] as const;
+export const DAMAGE_STATUSES = ['PENDING', 'APPROVED', 'REJECTED'] as const;
+export const AUDIT_STATUSES = ['IN_PROGRESS', 'PENDING_APPROVAL', 'APPROVED', 'CANCELLED'] as const;
+
+export const returnNumberSeq = pgSequence('return_number_seq', { startWith: 1 });
+
+export const saleReturns = pgTable(
+  'sale_returns',
+  {
+    id: id(),
+    number: text('number').notNull(),
+    saleId: uuid('sale_id')
+      .notNull()
+      .references(() => sales.id),
+    reason: text('reason').notNull(),
+    refundMinor: money('refund_minor').notNull(),
+    /** The part of the refund that cancelled what the customer still owed instead of paying cash out. */
+    appliedToReceivableMinor: money('applied_to_receivable_minor').notNull().default(0),
+    refundMethod: text('refund_method', { enum: SETTLEMENT_METHODS }),
+    journalEntryId: uuid('journal_entry_id').references(() => journalEntries.id),
+    processedBy: uuid('processed_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('sale_returns_refund_positive', sql`${t.refundMinor} > 0`),
+    check(
+      'sale_returns_split_valid',
+      sql`${t.appliedToReceivableMinor} >= 0 and ${t.appliedToReceivableMinor} <= ${t.refundMinor}`,
+    ),
+    uniqueIndex('sale_returns_number_uq').on(t.number),
+    index('sale_returns_sale_idx').on(t.saleId),
+  ],
+);
+
+export const saleReturnItems = pgTable(
+  'sale_return_items',
+  {
+    id: id(),
+    returnId: uuid('return_id')
+      .notNull()
+      .references(() => saleReturns.id),
+    saleItemId: uuid('sale_item_id')
+      .notNull()
+      .references(() => saleItems.id),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => products.id),
+    quantity: integer('quantity').notNull(),
+    /** Fit to sell again: the stock and its cost come back. Otherwise the goods are scrap. */
+    restockable: boolean('restockable').notNull(),
+    refundMinor: money('refund_minor').notNull(),
+    costMinor: money('cost_minor').notNull(),
+  },
+  (t) => [
+    check('sale_return_items_qty_positive', sql`${t.quantity} > 0`),
+    check('sale_return_items_amounts', sql`${t.refundMinor} >= 0 and ${t.costMinor} >= 0`),
+    index('sale_return_items_return_idx').on(t.returnId),
+  ],
+);
+
+export const damageNumberSeq = pgSequence('damage_number_seq', { startWith: 1 });
+
+export const damageRecords = pgTable(
+  'damage_records',
+  {
+    id: id(),
+    number: text('number').notNull(),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => products.id),
+    kind: text('kind', { enum: DAMAGE_KINDS }).notNull(),
+    quantity: integer('quantity').notNull(),
+    cause: text('cause').notNull(),
+    status: text('status', { enum: DAMAGE_STATUSES }).notNull().default('PENDING'),
+    reportedBy: uuid('reported_by')
+      .notNull()
+      .references(() => users.id),
+    decidedBy: uuid('decided_by').references(() => users.id),
+    decidedAt: timestamp('decided_at', { withTimezone: true }),
+    decisionNote: text('decision_note'),
+    /** What it cost, fixed at approval from the stock value of that moment. */
+    lossMinor: money('loss_minor'),
+    journalEntryId: uuid('journal_entry_id').references(() => journalEntries.id),
+    version: version(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('damage_records_kind_valid', sql`${t.kind} in ('DAMAGE', 'WRITE_OFF')`),
+    check('damage_records_status_valid', sql`${t.status} in ('PENDING', 'APPROVED', 'REJECTED')`),
+    check('damage_records_qty_positive', sql`${t.quantity} > 0`),
+    // Whoever reports a loss cannot be the one who signs it off.
+    check(
+      'damage_records_separation',
+      sql`${t.decidedBy} is null or ${t.decidedBy} <> ${t.reportedBy}`,
+    ),
+    uniqueIndex('damage_records_number_uq').on(t.number),
+    index('damage_records_status_idx').on(t.status, t.createdAt),
+  ],
+);
+
+export const auditNumberSeq = pgSequence('stock_audit_number_seq', { startWith: 1 });
+
+export const stockAudits = pgTable(
+  'stock_audits',
+  {
+    id: id(),
+    number: text('number').notNull(),
+    status: text('status', { enum: AUDIT_STATUSES }).notNull().default('IN_PROGRESS'),
+    notes: text('notes'),
+    startedBy: uuid('started_by')
+      .notNull()
+      .references(() => users.id),
+    submittedAt: timestamp('submitted_at', { withTimezone: true }),
+    approvedBy: uuid('approved_by').references(() => users.id),
+    approvedAt: timestamp('approved_at', { withTimezone: true }),
+    version: version(),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check(
+      'stock_audits_status_valid',
+      sql`${t.status} in ('IN_PROGRESS', 'PENDING_APPROVAL', 'APPROVED', 'CANCELLED')`,
+    ),
+    check(
+      'stock_audits_separation',
+      sql`${t.approvedBy} is null or ${t.approvedBy} <> ${t.startedBy}`,
+    ),
+    uniqueIndex('stock_audits_number_uq').on(t.number),
+  ],
+);
+
+export const stockAuditItems = pgTable(
+  'stock_audit_items',
+  {
+    id: id(),
+    auditId: uuid('audit_id')
+      .notNull()
+      .references(() => stockAudits.id),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => products.id),
+    /** What the system said when the shelf was counted, read under a row lock, so the variance is exact. */
+    systemQty: integer('system_qty'),
+    physicalQty: integer('physical_qty'),
+    countedBy: uuid('counted_by').references(() => users.id),
+    countedAt: timestamp('counted_at', { withTimezone: true }),
+    /** The value of the adjustment actually posted at approval (negative for a shortage). */
+    adjustmentValueMinor: money('adjustment_value_minor'),
+  },
+  (t) => [
+    check('stock_audit_items_counts', sql`${t.physicalQty} is null or ${t.physicalQty} >= 0`),
+    uniqueIndex('stock_audit_items_unique').on(t.auditId, t.productId),
+  ],
+);
+
 // ---------------------------------------------------------------- platform
 
 /** Append-only: a trigger (migration 0001) rejects UPDATE and DELETE. */
@@ -687,3 +862,5 @@ export type SaleItemRow = typeof saleItems.$inferSelect;
 export type PurchaseRow = typeof purchases.$inferSelect;
 export type PurchaseItemRow = typeof purchaseItems.$inferSelect;
 export type ExpenseRow = typeof expenses.$inferSelect;
+export type DamageRow = typeof damageRecords.$inferSelect;
+export type StockAuditRow = typeof stockAudits.$inferSelect;

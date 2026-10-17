@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createProductSchema } from './catalog/catalog.contract.js';
 import { businessDate, configureTimezone } from './common/time.js';
 import { issueCost } from './inventory/inventory.js';
+import { shareOfLine } from './operations/returns.service.js';
 import { openApiDocument } from './openapi.js';
 import { createSaleSchema } from './sales/sales.contract.js';
 
@@ -34,6 +35,30 @@ describe('issueCost', () => {
   it('does not overflow on large stock values', () => {
     const value = 9_000_000_000_000_000; // above 2^53 once multiplied by the quantity
     expect(issueCost(value, 1_000_000, 999_999)).toBe(8_999_991_000_000_000);
+  });
+});
+
+describe('shareOfLine', () => {
+  it('splits a line into pieces that add up to exactly the whole, whatever the order', () => {
+    for (const [amount, qty] of [
+      [29_000, 3],
+      [10_000, 7],
+      [1, 3],
+      [999_999_999, 13],
+    ] as const) {
+      let returned = 0;
+      let total = 0;
+      for (let i = 0; i < qty; i += 1) {
+        total += shareOfLine(amount, qty, returned, 1);
+        returned += 1;
+      }
+      expect(total).toBe(amount);
+    }
+  });
+
+  it('gives the same total for a lump return as for the pieces', () => {
+    expect(shareOfLine(29_000, 3, 0, 3)).toBe(29_000);
+    expect(shareOfLine(29_000, 3, 1, 2)).toBe(29_000 - shareOfLine(29_000, 3, 0, 1));
   });
 });
 
@@ -102,7 +127,7 @@ describe('OpenAPI document', () => {
   it('has a unique operation id per route', () => {
     const ids = operations.map((o) => o.operationId);
     expect(new Set(ids).size).toBe(ids.length);
-    expect(ids.length).toBeGreaterThanOrEqual(55);
+    expect(ids.length).toBeGreaterThanOrEqual(70);
   });
 
   it('marks every non-public route as needing a bearer token', () => {
