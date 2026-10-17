@@ -4,3 +4,5 @@ dist
 coverage
 apps/api/drizzle
 LICENSE
+.next
+next-env.d.ts

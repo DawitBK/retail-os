@@ -18,7 +18,8 @@
     "test": "turbo run test",
     "test:integration": "turbo run test:integration",
     "db:up": "docker compose -f compose.dev.yml up -d --wait",
-    "db:down": "docker compose -f compose.dev.yml down"
+    "db:down": "docker compose -f compose.dev.yml down",
+    "smoke": "node scripts/smoke.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.0",

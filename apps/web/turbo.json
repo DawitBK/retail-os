@@ -1,0 +1,19 @@
+{
+  "$schema": "https://turborepo.com/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "inputs": [
+        "app/**",
+        "components/**",
+        "lib/**",
+        "*.ts",
+        "*.mjs",
+        "package.json",
+        "tsconfig.json"
+      ],
+      "outputs": [".next/**", "!.next/cache/**"],
+      "env": ["API_URL"]
+    }
+  }
+}

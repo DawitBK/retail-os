@@ -39,7 +39,7 @@ Money is integer minor units (santim), never a float.
 ## Stack
 
 Node 24, NestJS 12, Drizzle ORM, PostgreSQL 18, Zod contracts that generate the OpenAPI document,
-Vitest, pnpm 10 and Turborepo. Decisions are in [docs/adr](docs/adr); the accounting rules are in
+Next.js 16 and React 19 with Tailwind for the till and back office, Vitest, pnpm 10 and Turborepo. Decisions are in [docs/adr](docs/adr); the accounting rules are in
 [docs/accounting.md](docs/accounting.md).
 
 ## Run it
@@ -52,7 +52,8 @@ cp .env.example .env             # then export its values, or use your own loade
 pnpm build
 pnpm --filter @retail/api db:migrate
 OWNER_EMAIL=you@example.com OWNER_PASSWORD='a long passphrase' pnpm --filter @retail/api owner:bootstrap
-pnpm --filter @retail/api start
+pnpm --filter @retail/api start      # the API on :3000
+API_URL=http://127.0.0.1:3000 pnpm --filter @retail/web dev   # the web app on :3001
 ```
 
 There is no public sign-up: the first owner is created with `owner:bootstrap`, which refuses to
@@ -73,6 +74,7 @@ books cannot be truncated.
 
 ```
 apps/api/        the HTTP API (NestJS)
+apps/web/        the till, back office and statements (Next.js; session kept server-side, ADR 0004)
 packages/kit/    shared building blocks: env, logging, problem+json, pagination, health, OpenAPI
 packages/config/ shared TypeScript and ESLint presets
 docs/            ADRs, the accounting rules, the enterprise-bar scorecard
