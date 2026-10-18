@@ -14,6 +14,10 @@ export const envSchema = baseEnvSchema.extend({
     .int()
     .min(3600)
     .default(60 * 60 * 24 * 14),
+  /** Single sign-on: set all three, or none. */
+  OIDC_ISSUER: z.url().optional(),
+  OIDC_CLIENT_ID: z.string().min(1).optional(),
+  OIDC_CLIENT_SECRET: z.string().min(1).optional(),
   /** The shop's time zone: it decides which day a sale or an expense belongs to. */
   BUSINESS_TIMEZONE: z.string().min(1).default('Africa/Addis_Ababa'),
 });

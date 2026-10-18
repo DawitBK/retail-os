@@ -4,6 +4,8 @@ import { refreshTokens } from './lib/refresh';
 import { ACCESS_COOKIE, REFRESH_COOKIE, accessCookie, refreshCookie } from './lib/session';
 
 const PUBLIC_PATHS = ['/login'];
+const isPublic = (pathname: string) =>
+  PUBLIC_PATHS.includes(pathname) || pathname.startsWith('/login/');
 
 /**
  * Runs before every page and /bff request: keeps people without a session on the login page and
@@ -12,7 +14,7 @@ const PUBLIC_PATHS = ['/login'];
  */
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  if (PUBLIC_PATHS.includes(pathname)) return NextResponse.next();
+  if (isPublic(pathname)) return NextResponse.next();
 
   const refresh = request.cookies.get(REFRESH_COOKIE)?.value;
   const access = request.cookies.get(ACCESS_COOKIE)?.value;

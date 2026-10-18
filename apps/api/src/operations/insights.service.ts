@@ -134,7 +134,13 @@ export class InsightsService {
       .from(journalLines)
       .innerJoin(journalEntries, eq(journalEntries.id, journalLines.entryId))
       .innerJoin(accounts, eq(accounts.id, journalLines.accountId))
-      .where(and(gte(journalEntries.entryDate, from), lte(journalEntries.entryDate, to)));
+      .where(
+        and(
+          gte(journalEntries.entryDate, from),
+          lte(journalEntries.entryDate, to),
+          sql`${journalEntries.referenceType} is distinct from 'YEAR_CLOSE'`,
+        ),
+      );
     const revenueMinor = Number(row?.revenue ?? 0);
     const cogsMinor = Number(row?.cogs ?? 0);
     const expensesMinor = Number(row?.expenses ?? 0);
@@ -215,7 +221,13 @@ export class InsightsService {
       .from(journalLines)
       .innerJoin(journalEntries, eq(journalEntries.id, journalLines.entryId))
       .innerJoin(accounts, eq(accounts.id, journalLines.accountId))
-      .where(and(gte(journalEntries.entryDate, from30), lte(journalEntries.entryDate, today)))
+      .where(
+        and(
+          gte(journalEntries.entryDate, from30),
+          lte(journalEntries.entryDate, today),
+          sql`${journalEntries.referenceType} is distinct from 'YEAR_CLOSE'`,
+        ),
+      )
       .groupBy(journalEntries.entryDate);
     const byDate = new Map(perDay.map((r) => [r.date, r]));
     const revenue30Days = Array.from({ length: 30 }, (_, i) => {

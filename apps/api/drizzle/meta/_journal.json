@@ -22,6 +22,20 @@
       "when": 1792245973442,
       "tag": "0002_ledger_and_inventory_guards",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792267819508,
+      "tag": "0003_purchase_returns",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792268034640,
+      "tag": "0004_period_close",
+      "breakpoints": true
     }
   ]
 }

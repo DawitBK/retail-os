@@ -12,7 +12,9 @@ import * as cat from './catalog/catalog.contract.js';
 import { Public } from './common/auth.js';
 import * as ops from './operations/operations.contract.js';
 import * as par from './parties/parties.contract.js';
+import * as per from './accounting/periods.contract.js';
 import * as pur from './purchases/purchases.contract.js';
+import * as pret from './purchases/purchase-returns.contract.js';
 import * as sal from './sales/sales.contract.js';
 
 type Access = 'public' | 'staff' | 'owner' | 'managers' | 'bookkeepers' | 'till';
@@ -694,6 +696,48 @@ export function openApiDocument(): Record<string, unknown> {
       params: idParams,
       body: acc.voidExpenseSchema,
       ok: ok(acc.expenseSchema),
+    },
+    {
+      access: 'managers',
+      method: 'post',
+      path: '/purchases/{id}/returns',
+      id: 'returnPurchaseGoods',
+      summary:
+        'Send received goods back to the supplier: stock leaves at its average cost, what we owe falls, and money already paid comes back',
+      tag: 'purchases',
+      params: pret.idParamsSchema,
+      body: pret.createPurchaseReturnSchema,
+      ok: created(pret.purchaseReturnSchema),
+    },
+    {
+      access: 'bookkeepers',
+      method: 'get',
+      path: '/purchase-returns',
+      id: 'listPurchaseReturns',
+      summary: 'List returns to suppliers',
+      tag: 'purchases',
+      query: pret.listPurchaseReturnsQuerySchema,
+      ok: ok(pret.purchaseReturnPageSchema),
+    },
+    {
+      access: 'bookkeepers',
+      method: 'get',
+      path: '/accounting/periods',
+      id: 'listPeriods',
+      summary: 'The years that have been closed and the date the books are locked through',
+      tag: 'accounting',
+      ok: ok(per.periodsSchema),
+    },
+    {
+      access: 'owner',
+      method: 'post',
+      path: '/accounting/close-year',
+      id: 'closeYear',
+      summary:
+        'Close a finished year: move its profit into retained earnings and lock the books through 31 December (permanent)',
+      tag: 'accounting',
+      body: per.closeYearSchema,
+      ok: created(per.periodCloseSchema),
     },
     // returns, damage, audits, insight
     {

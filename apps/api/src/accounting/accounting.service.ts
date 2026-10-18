@@ -284,6 +284,8 @@ export class AccountingService {
           gte(journalEntries.entryDate, range.from),
           lte(journalEntries.entryDate, range.to),
           sql`${accounts.type} in ('REVENUE', 'COGS', 'EXPENSE')`,
+          // The year-end closing entry only moves profit into equity; it is not trading.
+          sql`${journalEntries.referenceType} is distinct from 'YEAR_CLOSE'`,
         ),
       )
       .groupBy(accounts.code, accounts.name, accounts.type, accounts.normalBalance)
@@ -334,8 +336,10 @@ export class AccountingService {
       .where(lte(journalEntries.entryDate, asOf))
       .groupBy(accounts.code, accounts.name, accounts.type, accounts.normalBalance)
       .orderBy(asc(accounts.code));
+    // Assets are shown debit-positive, liabilities and equity credit-positive, whatever an account's usual side is: a
+    // debit-normal equity account (owner's drawings) must reduce equity, and a credit-normal asset (depreciation) reduce assets.
     const signed = (r: (typeof rows)[number]) =>
-      r.normal === 'DEBIT' ? Number(r.net) : -Number(r.net);
+      r.type === 'ASSET' ? Number(r.net) : -Number(r.net);
     const lineOf = (r: (typeof rows)[number]) => ({
       code: r.code,
       name: r.name,

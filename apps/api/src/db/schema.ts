@@ -47,6 +47,7 @@ export const MOVEMENT_TYPES = [
   'SALE',
   'SALE_VOID',
   'SALE_RETURN',
+  'PURCHASE_RETURN',
   'DAMAGE_LOSS',
   'WRITE_OFF',
   'STOCK_ADJUSTMENT_INCREASE',
@@ -412,7 +413,7 @@ export const inventoryMovements = pgTable(
     check('inventory_movements_stock_non_negative', sql`${t.stockAfter} >= 0`),
     check(
       'inventory_movements_type_valid',
-      sql`${t.movementType} in ('OPENING_BALANCE', 'PURCHASE_RECEIPT', 'SALE', 'SALE_VOID', 'SALE_RETURN', 'DAMAGE_LOSS', 'WRITE_OFF', 'STOCK_ADJUSTMENT_INCREASE', 'STOCK_ADJUSTMENT_DECREASE')`,
+      sql`${t.movementType} in ('OPENING_BALANCE', 'PURCHASE_RECEIPT', 'SALE', 'SALE_VOID', 'SALE_RETURN', 'PURCHASE_RETURN', 'DAMAGE_LOSS', 'WRITE_OFF', 'STOCK_ADJUSTMENT_INCREASE', 'STOCK_ADJUSTMENT_DECREASE')`,
     ),
     index('inventory_movements_product_idx').on(t.productId, t.createdAt),
     index('inventory_movements_reference_idx').on(t.referenceType, t.referenceId),
@@ -597,6 +598,8 @@ export const purchaseItems = pgTable(
       .references(() => products.id),
     orderedQty: integer('ordered_qty').notNull(),
     receivedQty: integer('received_qty').notNull().default(0),
+    /** Units sent back to the supplier after they were received. */
+    returnedQty: integer('returned_qty').notNull().default(0),
     unitCostMinor: money('unit_cost_minor').notNull(),
   },
   (t) => [
@@ -606,6 +609,10 @@ export const purchaseItems = pgTable(
       sql`${t.receivedQty} >= 0 and ${t.receivedQty} <= ${t.orderedQty}`,
     ),
     check('purchase_items_cost_non_negative', sql`${t.unitCostMinor} >= 0`),
+    check(
+      'purchase_items_returned_valid',
+      sql`${t.returnedQty} >= 0 and ${t.returnedQty} <= ${t.receivedQty}`,
+    ),
     index('purchase_items_purchase_idx').on(t.purchaseId),
   ],
 );
@@ -703,6 +710,96 @@ export const saleReturnItems = pgTable(
     check('sale_return_items_qty_positive', sql`${t.quantity} > 0`),
     check('sale_return_items_amounts', sql`${t.refundMinor} >= 0 and ${t.costMinor} >= 0`),
     index('sale_return_items_return_idx').on(t.returnId),
+  ],
+);
+
+export const purchaseReturnNumberSeq = pgSequence('purchase_return_number_seq', { startWith: 1 });
+
+/** Goods sent back to a supplier. It lowers what we owe, or brings money back when it was already paid. */
+export const purchaseReturns = pgTable(
+  'purchase_returns',
+  {
+    id: id(),
+    number: text('number').notNull(),
+    purchaseId: uuid('purchase_id')
+      .notNull()
+      .references(() => purchases.id),
+    reason: text('reason').notNull(),
+    /** What the supplier credits us for: quantity times the purchase unit cost. */
+    valueMinor: money('value_minor').notNull(),
+    /** The part that cancelled what we still owed; the rest comes back as money. */
+    creditAppliedMinor: money('credit_applied_minor').notNull().default(0),
+    refundMethod: text('refund_method', { enum: SETTLEMENT_METHODS }),
+    journalEntryId: uuid('journal_entry_id').references(() => journalEntries.id),
+    processedBy: uuid('processed_by')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    check('purchase_returns_value_positive', sql`${t.valueMinor} > 0`),
+    check(
+      'purchase_returns_split_valid',
+      sql`${t.creditAppliedMinor} >= 0 and ${t.creditAppliedMinor} <= ${t.valueMinor}`,
+    ),
+    // Money only comes back when part of the value was not a credit, and then the method is known.
+    check(
+      'purchase_returns_refund_method',
+      sql`(${t.valueMinor} = ${t.creditAppliedMinor}) = (${t.refundMethod} is null)`,
+    ),
+    uniqueIndex('purchase_returns_number_uq').on(t.number),
+    index('purchase_returns_purchase_idx').on(t.purchaseId),
+  ],
+);
+
+export const purchaseReturnItems = pgTable(
+  'purchase_return_items',
+  {
+    id: id(),
+    returnId: uuid('return_id')
+      .notNull()
+      .references(() => purchaseReturns.id),
+    purchaseItemId: uuid('purchase_item_id')
+      .notNull()
+      .references(() => purchaseItems.id),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => products.id),
+    quantity: integer('quantity').notNull(),
+    /** The supplier's credit for these units (purchase unit cost times quantity). */
+    valueMinor: money('value_minor').notNull(),
+    /** What the units were worth on our shelf when they left (the average cost). */
+    stockCostMinor: money('stock_cost_minor').notNull(),
+  },
+  (t) => [
+    check('purchase_return_items_qty_positive', sql`${t.quantity} > 0`),
+    check('purchase_return_items_amounts', sql`${t.valueMinor} >= 0 and ${t.stockCostMinor} >= 0`),
+    index('purchase_return_items_return_idx').on(t.returnId),
+  ],
+);
+
+/**
+ * A closed financial year. Closing posts one entry that moves the year's profit into retained
+ * earnings, and from then on nothing may be posted to a date on or before `closed_through`.
+ * A close is never undone: a mistake in a closed year is corrected by an entry in the open one.
+ */
+export const periodCloses = pgTable(
+  'period_closes',
+  {
+    id: id(),
+    fiscalYear: integer('fiscal_year').notNull(),
+    closedThrough: date('closed_through', { mode: 'string' }).notNull(),
+    /** The year's profit (negative for a loss) as moved into retained earnings. */
+    netProfitMinor: bigint('net_profit_minor', { mode: 'number' }).notNull(),
+    journalEntryId: uuid('journal_entry_id').references(() => journalEntries.id),
+    closedBy: uuid('closed_by')
+      .notNull()
+      .references(() => users.id),
+    closedAt: timestamp('closed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check('period_closes_year_plausible', sql`${t.fiscalYear} between 1990 and 2200`),
+    uniqueIndex('period_closes_year_uq').on(t.fiscalYear),
   ],
 );
 

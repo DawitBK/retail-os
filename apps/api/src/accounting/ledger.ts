@@ -1,7 +1,7 @@
-import { ProblemException, unprocessable } from '@retail/kit';
+import { conflict, ProblemException, unprocessable } from '@retail/kit';
 import { eq, inArray, sql } from 'drizzle-orm';
 import type { Tx } from '../db/db.module.js';
-import { accounts, journalEntries, journalLines } from '../db/schema.js';
+import { accounts, journalEntries, journalLines, periodCloses } from '../db/schema.js';
 
 /** The chart-of-accounts codes the application posts to. The rest of the chart is data. */
 export const ACCOUNT = {
@@ -109,6 +109,21 @@ export async function postJournalEntry(
         'account-inactive',
         'Account is inactive',
         `Account ${code} cannot be posted to`,
+      );
+    }
+  }
+
+  // A closed year is closed: nothing may be posted to a date on or before the last close. The
+  // database enforces the same rule; this gives a clear answer before it gets that far.
+  if (params.referenceType !== 'YEAR_CLOSE') {
+    const [lock] = await tx
+      .select({ through: sql<string | null>`max(${periodCloses.closedThrough})::text` })
+      .from(periodCloses);
+    if (lock?.through && params.date <= lock.through) {
+      throw conflict(
+        'period-closed',
+        'That period is closed',
+        `The books are closed through ${lock.through}; post to a later date`,
       );
     }
   }
