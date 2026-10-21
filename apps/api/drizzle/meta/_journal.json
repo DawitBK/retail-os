@@ -36,6 +36,13 @@
       "when": 1792268034640,
       "tag": "0004_period_close",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792615607543,
+      "tag": "0005_sso_subject_and_platform_admin",
+      "breakpoints": true
     }
   ]
 }

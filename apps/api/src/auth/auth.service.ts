@@ -99,14 +99,50 @@ export class AuthService {
     return this.issue(user, randomUUID());
   }
 
-  /** Sign in someone the identity provider vouches for (single sign-on); they must already have an active account. */
-  async loginWithVerifiedEmail(email: string): Promise<TokenPair> {
+  /**
+   * Sign in someone the identity provider vouches for (single sign-on); they must already have an active account. The provider's id for the person
+   * is bound to the account at the first sign-in; after that the SAME email with a DIFFERENT id is refused (an address given to someone else later
+   * must not inherit the account).
+   */
+  async loginWithVerifiedEmail(email: string, subject: string): Promise<TokenPair> {
     const [user] = await this.db
       .select()
       .from(users)
       .where(and(eq(users.email, email), isNull(users.deletedAt)));
     if (!user || !user.active) throw unauthorized('There is no active account for this identity');
+    if (user.ssoSubject && user.ssoSubject !== subject) {
+      throw unauthorized(
+        'This sign-in belongs to a different person than the account with that email',
+      );
+    }
+    if (!user.ssoSubject) {
+      try {
+        await this.db.update(users).set({ ssoSubject: subject }).where(eq(users.id, user.id));
+      } catch (e) {
+        if (pgCode(e) === '23505')
+          throw unauthorized('This sign-in is already bound to another account');
+        throw e;
+      }
+    }
     return this.issue(user, randomUUID());
+  }
+
+  /**
+   * The identity provider says this person signed out or was disabled there: end every session of the account (all refresh tokens; an access token
+   * lives at most its short lifetime). Answers the same for an id this app has never seen, so the call reveals nothing.
+   */
+  async revokeSessionsBySsoSubject(subject: string): Promise<number> {
+    const revoked = await this.db
+      .update(refreshTokens)
+      .set({ revokedAt: sql`now()` })
+      .where(
+        and(
+          isNull(refreshTokens.revokedAt),
+          sql`${refreshTokens.userId} in (select id from users where sso_subject = ${subject})`,
+        ),
+      )
+      .returning({ id: refreshTokens.id });
+    return revoked.length;
   }
 
   async refresh(presented: string): Promise<TokenPair> {
@@ -220,8 +256,12 @@ export class AuthService {
     }
   }
 
-  async listStaff(query: ListStaffQuery) {
-    const where: SQL[] = [isNull(users.deletedAt)];
+  async listStaff(viewer: Principal, query: ListStaffQuery) {
+    // The platform administrator is in nobody else's list; only their own row shows to themselves.
+    const where: SQL[] = [
+      isNull(users.deletedAt),
+      or(eq(users.platformAdmin, false), eq(users.id, viewer.userId)) as SQL,
+    ];
     if (query.role) where.push(eq(users.role, query.role));
     if (query.q) {
       const like = `%${escapeLike(query.q)}%`;
@@ -265,7 +305,9 @@ export class AuthService {
         .from(users)
         .where(and(eq(users.id, id), isNull(users.deletedAt)))
         .for('update');
-      if (!current) throw notFound(`Staff member ${id} does not exist`);
+      // The platform administrator answers like an id that was never there to everyone but themselves.
+      if (!current || (current.platformAdmin && current.id !== actor.userId))
+        throw notFound(`Staff member ${id} does not exist`);
       if (current.version !== input.version) {
         throw versionConflict('staff member', current.version, input.version);
       }

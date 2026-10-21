@@ -36,6 +36,12 @@ export const oidcExchangeSchema = z
   .strict();
 export type OidcExchange = z.output<typeof oidcExchangeSchema>;
 
+/** The body of the identity provider's back-channel logout call (form encoded): one signed logout token. */
+export const backchannelLogoutSchema = z
+  .object({ logout_token: z.string().min(20).max(8192) })
+  .strict();
+export type BackchannelLogout = z.output<typeof backchannelLogoutSchema>;
+
 export const refreshSchema = z.object({ refreshToken: z.string().min(20).max(200) }).strict();
 export type RefreshRequest = z.output<typeof refreshSchema>;
 

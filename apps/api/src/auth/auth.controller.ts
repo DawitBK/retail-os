@@ -5,6 +5,8 @@ import {
   changePasswordSchema,
   createStaffSchema,
   idParamsSchema,
+  backchannelLogoutSchema,
+  type BackchannelLogout,
   oidcExchangeSchema,
   type OidcExchange,
   listStaffQuerySchema,
@@ -39,6 +41,17 @@ export class AuthController {
   @HttpCode(200)
   oidcExchange(@Body(new ZodValidationPipe(oidcExchangeSchema)) body: OidcExchange) {
     return this.oidc.exchange(body);
+  }
+
+  /** The identity provider's back-channel logout: a signed token (form encoded) saying a person signed out or was disabled there. */
+  @Public()
+  @Post('auth/backchannel-logout')
+  @HttpCode(200)
+  async backchannelLogout(
+    @Body(new ZodValidationPipe(backchannelLogoutSchema)) body: BackchannelLogout,
+  ) {
+    await this.oidc.handleBackchannelLogout(body.logout_token);
+    return {};
   }
 
   @Public()
@@ -87,8 +100,11 @@ export class AuthController {
 
   @Roles('owner')
   @Get('staff')
-  listStaff(@Query(new ZodValidationPipe(listStaffQuerySchema)) query: ListStaffQuery) {
-    return this.auth.listStaff(query);
+  listStaff(
+    @CurrentUser() viewer: Principal,
+    @Query(new ZodValidationPipe(listStaffQuerySchema)) query: ListStaffQuery,
+  ) {
+    return this.auth.listStaff(viewer, query);
   }
 
   @Roles('owner')

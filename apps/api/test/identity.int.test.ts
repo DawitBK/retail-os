@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { AuthService } from '../src/auth/auth.service.js';
 import { makeStaff, PASSWORD, signIn, startContext, type TestContext } from './helpers.js';
 
 let ctx: TestContext;
@@ -255,5 +256,102 @@ describe('platform', () => {
     );
     await expect(ctx.pool.query('delete from audit_log')).rejects.toThrow(/append-only/);
     await expect(ctx.pool.query('truncate audit_log')).rejects.toThrow(/append-only/);
+  });
+});
+
+describe('the platform administrator', () => {
+  it('is in no staff list, cannot be edited by anyone else, and still sees and edits itself', async () => {
+    const owner = await makeStaff(ctx, 'owner');
+    const hidden = await makeStaff(ctx, 'owner');
+    await ctx.pool.query('update users set platform_admin = true where id = $1', [hidden.id]);
+
+    const others = await ctx.http().get('/api/v1/staff?limit=100').set(owner.auth);
+    expect(others.status).toBe(200);
+    expect(others.body.items.some((u: { id: string }) => u.id === hidden.id)).toBe(false);
+    expect(others.body.page.total).toBe(others.body.items.length); // the count does not give the hidden account away either
+
+    const edit = await ctx
+      .http()
+      .patch(`/api/v1/staff/${hidden.id}`)
+      .set(owner.auth)
+      .send({ version: 1, active: false });
+    expect(edit.status).toBe(404);
+    const nobody = await ctx
+      .http()
+      .patch(`/api/v1/staff/${randomUUID()}`)
+      .set(owner.auth)
+      .send({ version: 1, active: false });
+    expect(nobody.status).toBe(404);
+    expect(edit.body.title).toBe(nobody.body.title); // the same answer as an id that never existed
+    const row = await ctx.pool.query('select active from users where id = $1', [hidden.id]);
+    expect(row.rows[0].active).toBe(true);
+
+    const own = await ctx.http().get('/api/v1/staff?limit=100').set(hidden.auth);
+    expect(own.body.items.some((u: { id: string }) => u.id === hidden.id)).toBe(true);
+    const self = await ctx
+      .http()
+      .patch(`/api/v1/staff/${hidden.id}`)
+      .set(hidden.auth)
+      .send({ version: 1, firstName: 'Platform' });
+    expect(self.status).toBe(200);
+  });
+});
+
+describe('single sign-on identity and sign-out', () => {
+  it('binds the provider id at the first sign-in, then refuses the same email with another id', async () => {
+    const auth = ctx.app.get(AuthService);
+    const person = await makeStaff(ctx, 'manager');
+    const sub = `sub-${randomUUID()}`;
+    expect((await auth.loginWithVerifiedEmail(person.email, sub)).user.email).toBe(person.email);
+    expect(
+      (await ctx.pool.query('select sso_subject from users where id = $1', [person.id])).rows[0]
+        .sso_subject,
+    ).toBe(sub);
+    expect((await auth.loginWithVerifiedEmail(person.email, sub)).user.id).toBe(person.id);
+    await expect(
+      auth.loginWithVerifiedEmail(person.email, `sub-${randomUUID()}`),
+    ).rejects.toMatchObject({ status: 401 });
+
+    const other = await makeStaff(ctx, 'manager');
+    await expect(auth.loginWithVerifiedEmail(other.email, sub)).rejects.toMatchObject({
+      status: 401,
+    }); // an id belongs to one account
+  });
+
+  it("the provider's sign-out ends every session of that person and nobody else's", async () => {
+    const auth = ctx.app.get(AuthService);
+    const a = await makeStaff(ctx, 'cashier');
+    const b = await makeStaff(ctx, 'cashier');
+    const subA = `sub-${randomUUID()}`;
+    const subB = `sub-${randomUUID()}`;
+    const tokensA = await auth.loginWithVerifiedEmail(a.email, subA);
+    await auth.loginWithVerifiedEmail(b.email, subB);
+    expect(await auth.revokeSessionsBySsoSubject(`sub-${randomUUID()}`)).toBe(0); // an id this app never saw: nothing, and no error
+    expect(await auth.revokeSessionsBySsoSubject(subA)).toBeGreaterThanOrEqual(2); // the password sign-in of makeStaff and the SSO one
+    const refresh = await ctx
+      .http()
+      .post('/api/v1/auth/refresh')
+      .send({ refreshToken: tokensA.refreshToken });
+    expect(refresh.status).toBe(401);
+    const refreshB = await ctx
+      .http()
+      .post('/api/v1/auth/refresh')
+      .send({ refreshToken: b.refreshToken });
+    expect(refreshB.status).toBe(200);
+  });
+
+  it('the back-channel route is public and refuses a missing or malformed token', async () => {
+    expect(
+      (await ctx.http().post('/api/v1/auth/backchannel-logout').type('form').send({})).status,
+    ).toBe(400);
+    expect(
+      (
+        await ctx
+          .http()
+          .post('/api/v1/auth/backchannel-logout')
+          .type('form')
+          .send({ logout_token: 'x'.repeat(30) })
+      ).status,
+    ).toBeGreaterThanOrEqual(400);
   });
 });

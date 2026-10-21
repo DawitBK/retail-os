@@ -27,11 +27,18 @@ export default async function LoginPage({
         </a>
       ) : null}
       {error ? (
-        <p className="mt-3 text-sm text-red-600" role="alert">
-          {error === 'no-account'
-            ? 'Your single sign-on account has no access here. Ask the owner to add you.'
-            : 'Single sign-on did not complete. Try again.'}
-        </p>
+        <div className="mt-3 text-sm text-red-600" role="alert">
+          <p>
+            {error === 'no-account'
+              ? 'The person signed in to single sign-on has no account here. Ask the owner to add you, or sign in as someone else.'
+              : 'Single sign-on did not complete. Try again.'}
+          </p>
+          {error === 'no-account' && sso.enabled ? (
+            <a className="btn mt-2 w-full text-center" href="/login/sso/switch">
+              Sign out of single sign-on and use another account
+            </a>
+          ) : null}
+        </div>
       ) : null}
     </main>
   );

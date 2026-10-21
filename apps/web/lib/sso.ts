@@ -4,6 +4,8 @@ import { API_URL } from './session';
 export interface SsoConfig {
   enabled: boolean;
   authorizationEndpoint?: string;
+  /** Where the provider ends the person's single sign-on session ("sign in as someone else"). */
+  endSessionEndpoint?: string;
   clientId?: string;
 }
 

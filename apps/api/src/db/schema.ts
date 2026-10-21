@@ -82,6 +82,10 @@ export const users = pgTable(
     lastName: text('last_name').notNull(),
     role: text('role', { enum: ROLES }).notNull().default('cashier'),
     active: boolean('active').notNull().default(true),
+    /** The identity provider's id for this person ("sub"), bound at the first single sign-on; it is how a sign-out at the provider finds the account. */
+    ssoSubject: text('sso_subject'),
+    /** The platform administrator's account: in no staff list and out of reach of every other user (answers like an id that was never there). */
+    platformAdmin: boolean('platform_admin').notNull().default(false),
     version: version(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -93,6 +97,9 @@ export const users = pgTable(
     uniqueIndex('users_email_live_uq')
       .on(t.email)
       .where(sql`${t.deletedAt} is null`),
+    uniqueIndex('users_sso_subject_uq')
+      .on(t.ssoSubject)
+      .where(sql`${t.ssoSubject} is not null`),
   ],
 );
 

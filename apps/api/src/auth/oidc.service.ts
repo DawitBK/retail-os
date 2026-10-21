@@ -1,7 +1,8 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { decodeJwt } from 'jose';
+import { createRemoteJWKSet, decodeJwt, jwtVerify } from 'jose';
 import { AUTH_CONFIG, type AuthConfig } from '../common/auth.js';
 import { unauthorized } from '../common/errors.js';
+import { ProblemException } from '@retail/kit';
 import { AuthService } from './auth.service.js';
 import type { OidcExchange, TokenPair } from './auth.contract.js';
 
@@ -10,13 +11,19 @@ interface Discovery {
   authorization_endpoint: string;
   token_endpoint: string;
   userinfo_endpoint: string;
+  jwks_uri?: string;
+  end_session_endpoint?: string;
 }
 
 export interface OidcPublicConfig {
   enabled: boolean;
   authorizationEndpoint?: string;
+  /** Where the provider ends the person's single sign-on session (offered as "sign in as someone else"). */
+  endSessionEndpoint?: string;
   clientId?: string;
 }
+
+const BACKCHANNEL_LOGOUT_EVENT = 'http://schemas.openid.net/event/backchannel-logout';
 
 const TIMEOUT_MS = 10_000;
 const DISCOVERY_TTL_MS = 10 * 60_000;
@@ -31,6 +38,7 @@ const DISCOVERY_TTL_MS = 10 * 60_000;
 @Injectable()
 export class OidcService {
   private cached?: { value: Discovery; at: number };
+  private jwks?: ReturnType<typeof createRemoteJWKSet>;
 
   constructor(
     @Inject(AUTH_CONFIG) private readonly config: AuthConfig,
@@ -62,6 +70,7 @@ export class OidcService {
       return {
         enabled: true,
         authorizationEndpoint: d.authorization_endpoint,
+        endSessionEndpoint: d.end_session_endpoint,
         clientId: oidc.clientId,
       };
     } catch {
@@ -115,9 +124,51 @@ export class OidcService {
       email?: string;
       email_verified?: boolean;
     };
-    if (info.sub !== claims.sub || !info.email || info.email_verified !== true) {
+    if (!info.sub || info.sub !== claims.sub || !info.email || info.email_verified !== true) {
       throw unauthorized('The identity has no verified email');
     }
-    return this.auth.loginWithVerifiedEmail(info.email.trim().toLowerCase());
+    return this.auth.loginWithVerifiedEmail(info.email.trim().toLowerCase(), info.sub);
+  }
+
+  /**
+   * The provider's back-channel logout (OpenID Connect Back-Channel Logout 1.0): a signed logout token says this person signed out or was disabled there.
+   * Verified against the provider's published keys, issuer, this client's id, type and age; then every session of that person here ends.
+   * An invalid token is answered 400 and changes nothing.
+   */
+  async handleBackchannelLogout(logoutToken: string): Promise<void> {
+    const oidc = this.config.oidc;
+    if (!oidc) throw unauthorized('Single sign-on is not configured');
+    const d = await this.discovery();
+    if (!d.jwks_uri)
+      throw new ProblemException(
+        400,
+        'invalid-logout-token',
+        'The identity provider publishes no keys',
+      );
+    this.jwks ??= createRemoteJWKSet(new URL(d.jwks_uri), { timeoutDuration: TIMEOUT_MS });
+    let subject: string;
+    try {
+      const { payload } = await jwtVerify(logoutToken, this.jwks, {
+        issuer: d.issuer,
+        audience: oidc.clientId,
+        algorithms: ['RS256'],
+        typ: 'logout+jwt',
+        maxTokenAge: '5m',
+        clockTolerance: 30,
+      });
+      const events = payload['events'] as Record<string, unknown> | undefined;
+      if (
+        !events ||
+        !(BACKCHANNEL_LOGOUT_EVENT in events) ||
+        'nonce' in payload ||
+        typeof payload.sub !== 'string'
+      ) {
+        throw new Error('not a logout token');
+      }
+      subject = payload.sub;
+    } catch {
+      throw new ProblemException(400, 'invalid-logout-token', 'The logout token is not valid');
+    }
+    await this.auth.revokeSessionsBySsoSubject(subject);
   }
 }
