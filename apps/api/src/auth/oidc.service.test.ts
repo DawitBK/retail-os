@@ -287,6 +287,30 @@ describe('OidcService', () => {
       });
     });
 
+    it('puts the public address on the browser endpoints when the provider names itself by the internal host', async () => {
+      // The real provider builds every address in its discovery document from the host it was asked on.
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string | URL) => {
+          if (String(url) !== `${INTERNAL}${DISCOVERY_PATH}`) return new Response('no', { status: 404 });
+          return Response.json({
+            issuer: ISSUER,
+            authorization_endpoint: `${INTERNAL}/sso/authorize`,
+            token_endpoint: `${INTERNAL}/sso/token`,
+            userinfo_endpoint: `${INTERNAL}/sso/me`,
+            jwks_uri: `${INTERNAL}/sso/jwks`,
+            end_session_endpoint: `${INTERNAL}/sso/session/end`,
+          });
+        }),
+      );
+      expect(await internalService().publicConfig()).toEqual({
+        enabled: true,
+        authorizationEndpoint: 'https://idp.example.com/sso/authorize',
+        endSessionEndpoint: 'https://idp.example.com/sso/session/end',
+        clientId: 'shop',
+      });
+    });
+
     it('still answers 503 when the internal address cannot be reached', async () => {
       vi.stubGlobal(
         'fetch',

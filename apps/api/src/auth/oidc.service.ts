@@ -5,7 +5,7 @@ import { serviceUnavailable, unauthorized } from '../common/errors.js';
 import { ProblemException } from '@retail/kit';
 import { AuthService } from './auth.service.js';
 import type { OidcExchange, TokenPair } from './auth.contract.js';
-import { internalAddress } from './oidc-address.js';
+import { internalAddress, publicAddress } from './oidc-address.js';
 
 interface Discovery {
   issuer: string;
@@ -69,6 +69,15 @@ export class OidcService {
   }
 
   /**
+   * A provider address as a BROWSER should follow it. The provider names its endpoints after the host it was asked on, so a document
+   * fetched through OIDC_INTERNAL_URL carries the internal host; this puts the public origin back (see publicAddress).
+   */
+  private browser(address: string): string {
+    const oidc = this.config.oidc;
+    return oidc ? publicAddress(address, oidc.issuer, oidc.internalUrl) : address;
+  }
+
+  /**
    * The provider's discovery document. Not configured is a definite answer (401). Failing to get a usable
    * document (network error, timeout, non-200, malformed, wrong issuer) is 503: the caller may try again.
    * Only a good document is cached, so the next call after a failure asks the provider again.
@@ -107,8 +116,8 @@ export class OidcService {
     const d = await this.discovery();
     return {
       enabled: true,
-      authorizationEndpoint: d.authorization_endpoint,
-      endSessionEndpoint: d.end_session_endpoint,
+      authorizationEndpoint: this.browser(d.authorization_endpoint),
+      endSessionEndpoint: d.end_session_endpoint ? this.browser(d.end_session_endpoint) : undefined,
       clientId: oidc.clientId,
     };
   }
