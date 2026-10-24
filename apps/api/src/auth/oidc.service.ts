@@ -65,7 +65,10 @@ export class OidcService {
    */
   private server(address: string): string {
     const oidc = this.config.oidc;
-    return oidc ? internalAddress(address, oidc.issuer, oidc.internalUrl) : address;
+    // The provider names its endpoints after the host it was asked on, so a document fetched internally already carries the internal
+    // host and the issuer's path prefix (http://sso:7300/sso/token), a route that does not exist there. Put the address in its public
+    // form first, then map the public form to the internal one (https://idp/sso/token -> http://sso:7300/token).
+    return oidc ? internalAddress(this.browser(address), oidc.issuer, oidc.internalUrl) : address;
   }
 
   /**

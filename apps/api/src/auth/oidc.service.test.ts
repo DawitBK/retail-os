@@ -311,6 +311,36 @@ describe('OidcService', () => {
       });
     });
 
+    it('calls the provider on routes that exist when its document names the internal host with the issuer path prefix', async () => {
+      // On the internal address the provider answers at its root (/token, /me); the /sso prefix exists only publicly.
+      const seen: string[] = [];
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string | URL) => {
+          const u = String(url);
+          seen.push(u);
+          if (u === `${INTERNAL}${DISCOVERY_PATH}`) {
+            return Response.json({
+              issuer: ISSUER,
+              authorization_endpoint: `${INTERNAL}/sso/authorize`,
+              token_endpoint: `${INTERNAL}/sso/token`,
+              userinfo_endpoint: `${INTERNAL}/sso/me`,
+              jwks_uri: `${INTERNAL}/sso/jwks`,
+              end_session_endpoint: `${INTERNAL}/sso/session/end`,
+            });
+          }
+          if (u === `${INTERNAL}/token`) return Response.json({ id_token: await idToken(), access_token: 'at' });
+          if (u === `${INTERNAL}/me`) {
+            return Response.json({ sub: 'user-1', email: 'Owner@Shop.com', email_verified: true });
+          }
+          return new Response('no', { status: 404 });
+        }),
+      );
+      await internalService().exchange(input);
+      expect(seen).toEqual([`${INTERNAL}${DISCOVERY_PATH}`, `${INTERNAL}/token`, `${INTERNAL}/me`]);
+      expect(auth.loginWithVerifiedEmail).toHaveBeenCalledWith('owner@shop.com', 'user-1');
+    });
+
     it('still answers 503 when the internal address cannot be reached', async () => {
       vi.stubGlobal(
         'fetch',
