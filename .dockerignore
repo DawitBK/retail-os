@@ -1,0 +1,27 @@
+# Keep the build context small and the build reproducible: nothing from the host's installs or builds goes in.
+.git
+.github
+.turbo
+.env
+.env.*
+!.env.example
+**/node_modules
+**/dist
+**/.turbo
+**/coverage
+**/*.tsbuildinfo
+**/.next
+**/.DS_Store
+
+# The web app is deployed separately; only its manifest is needed for the lockfile.
+apps/web/**
+!apps/web/package.json
+
+# Not part of the API image.
+docs
+scripts
+legacy
+apps/api/test
+compose.dev.yml
+Dockerfile
+.dockerignore
