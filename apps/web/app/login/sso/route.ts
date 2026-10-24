@@ -9,8 +9,13 @@ const b64 = (b: Buffer) => b.toString('base64url');
 /** Start single sign-on: remember a one-time state, nonce and PKCE verifier, then send the browser to the provider. */
 export async function GET(request: NextRequest) {
   const origin = appOrigin(request);
-  const config = await ssoConfig();
-  if (!config.enabled || !config.authorizationEndpoint || !config.clientId) {
+  const result = await ssoConfig();
+  if (result.status === 'unavailable') {
+    // Could not find out (slow or broken connection): say so, do not claim single sign-on is off.
+    return NextResponse.redirect(new URL('/login?error=sso-unavailable', origin));
+  }
+  const config = result.status === 'enabled' ? result.config : undefined;
+  if (!config?.authorizationEndpoint || !config.clientId) {
     return NextResponse.redirect(new URL('/login?error=sso-off', origin));
   }
   const state = b64(randomBytes(18));

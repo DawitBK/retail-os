@@ -24,6 +24,7 @@ export async function createApp(env: Env, options: AppOptions = {}): Promise<INe
               issuer: env.OIDC_ISSUER,
               clientId: env.OIDC_CLIENT_ID,
               clientSecret: env.OIDC_CLIENT_SECRET,
+              internalUrl: env.OIDC_INTERNAL_URL,
             }
           : undefined,
     }),

@@ -26,7 +26,13 @@ export interface AuthConfig {
   accessTtlSeconds: number;
   refreshTtlSeconds: number;
   /** Single sign-on through an OpenID Connect provider; absent means password sign-in only. */
-  oidc?: { issuer: string; clientId: string; clientSecret: string };
+  oidc?: {
+    issuer: string;
+    clientId: string;
+    clientSecret: string;
+    /** Where this server reaches the provider instead of the public issuer address; absent means the issuer address. */
+    internalUrl?: string;
+  };
 }
 
 /** Routes are denied by default; mark a handler or controller `@Public()` to open it. */

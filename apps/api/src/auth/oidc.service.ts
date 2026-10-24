@@ -1,10 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { createRemoteJWKSet, decodeJwt, jwtVerify } from 'jose';
 import { AUTH_CONFIG, type AuthConfig } from '../common/auth.js';
-import { unauthorized } from '../common/errors.js';
+import { serviceUnavailable, unauthorized } from '../common/errors.js';
 import { ProblemException } from '@retail/kit';
 import { AuthService } from './auth.service.js';
 import type { OidcExchange, TokenPair } from './auth.contract.js';
+import { internalAddress } from './oidc-address.js';
 
 interface Discovery {
   issuer: string;
@@ -28,6 +29,18 @@ const BACKCHANNEL_LOGOUT_EVENT = 'http://schemas.openid.net/event/backchannel-lo
 const TIMEOUT_MS = 10_000;
 const DISCOVERY_TTL_MS = 10 * 60_000;
 
+/** A discovery document is usable when it names the addresses the sign-in flow needs. */
+function isDiscovery(value: unknown): value is Discovery {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  const required = ['issuer', 'authorization_endpoint', 'token_endpoint', 'userinfo_endpoint'];
+  const optional = ['jwks_uri', 'end_session_endpoint'];
+  return (
+    required.every((key) => typeof v[key] === 'string' && v[key] !== '') &&
+    optional.every((key) => v[key] === undefined || typeof v[key] === 'string')
+  );
+}
+
 /**
  * Single sign-on through an OpenID Connect identity provider: the authorization code flow with PKCE and a
  * confidential client. The web app sends the browser to the provider and brings the code back here; this
@@ -45,37 +58,59 @@ export class OidcService {
     @Inject(AuthService) private readonly auth: AuthService,
   ) {}
 
+  /**
+   * A provider address as THIS server should call it: under OIDC_INTERNAL_URL when that is set, otherwise as
+   * published. Only server-to-server calls use it; the addresses browsers follow (and the issuer that is
+   * checked and put in tokens) always stay public.
+   */
+  private server(address: string): string {
+    const oidc = this.config.oidc;
+    return oidc ? internalAddress(address, oidc.issuer, oidc.internalUrl) : address;
+  }
+
+  /**
+   * The provider's discovery document. Not configured is a definite answer (401). Failing to get a usable
+   * document (network error, timeout, non-200, malformed, wrong issuer) is 503: the caller may try again.
+   * Only a good document is cached, so the next call after a failure asks the provider again.
+   */
   private async discovery(): Promise<Discovery> {
     const oidc = this.config.oidc;
     if (!oidc) throw unauthorized('Single sign-on is not configured');
     if (this.cached && Date.now() - this.cached.at < DISCOVERY_TTL_MS) return this.cached.value;
     const issuer = oidc.issuer.replace(/\/+$/, '');
-    const res = await fetch(`${issuer}/.well-known/openid-configuration`, {
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
-    if (!res.ok) throw unauthorized('The identity provider could not be reached');
-    const value = (await res.json()) as Discovery;
-    if (value.issuer.replace(/\/+$/, '') !== issuer) {
-      throw unauthorized('The identity provider reports a different issuer than configured');
+    let body: unknown;
+    try {
+      const res = await fetch(`${this.server(issuer)}/.well-known/openid-configuration`, {
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+      });
+      if (!res.ok) throw new Error(`discovery answered ${res.status}`);
+      body = await res.json();
+    } catch {
+      throw serviceUnavailable('The identity provider could not be reached');
     }
-    this.cached = { value, at: Date.now() };
-    return value;
+    if (!isDiscovery(body)) {
+      throw serviceUnavailable(
+        'The identity provider sent a discovery document that cannot be used',
+      );
+    }
+    if (body.issuer.replace(/\/+$/, '') !== issuer) {
+      throw serviceUnavailable('The identity provider reports a different issuer than configured');
+    }
+    this.cached = { value: body, at: Date.now() };
+    return body;
   }
 
+  /** Off by design (no OIDC settings) is 200 with enabled false; an unreachable provider is 503, never "off". */
   async publicConfig(): Promise<OidcPublicConfig> {
     const oidc = this.config.oidc;
     if (!oidc) return { enabled: false };
-    try {
-      const d = await this.discovery();
-      return {
-        enabled: true,
-        authorizationEndpoint: d.authorization_endpoint,
-        endSessionEndpoint: d.end_session_endpoint,
-        clientId: oidc.clientId,
-      };
-    } catch {
-      return { enabled: false };
-    }
+    const d = await this.discovery();
+    return {
+      enabled: true,
+      authorizationEndpoint: d.authorization_endpoint,
+      endSessionEndpoint: d.end_session_endpoint,
+      clientId: oidc.clientId,
+    };
   }
 
   async exchange(input: OidcExchange): Promise<TokenPair> {
@@ -83,7 +118,7 @@ export class OidcService {
     if (!oidc) throw unauthorized('Single sign-on is not configured');
     const d = await this.discovery();
 
-    const tokenRes = await fetch(d.token_endpoint, {
+    const tokenRes = await fetch(this.server(d.token_endpoint), {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -114,7 +149,7 @@ export class OidcService {
       throw unauthorized('The identity token is not valid');
     }
 
-    const infoRes = await fetch(d.userinfo_endpoint, {
+    const infoRes = await fetch(this.server(d.userinfo_endpoint), {
       headers: { authorization: `Bearer ${tokens.access_token}` },
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
@@ -145,7 +180,9 @@ export class OidcService {
         'invalid-logout-token',
         'The identity provider publishes no keys',
       );
-    this.jwks ??= createRemoteJWKSet(new URL(d.jwks_uri), { timeoutDuration: TIMEOUT_MS });
+    this.jwks ??= createRemoteJWKSet(new URL(this.server(d.jwks_uri)), {
+      timeoutDuration: TIMEOUT_MS,
+    });
     let subject: string;
     try {
       const { payload } = await jwtVerify(logoutToken, this.jwks, {

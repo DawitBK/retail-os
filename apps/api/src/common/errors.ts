@@ -4,6 +4,9 @@ export const unauthorized = (detail = 'A valid access token is required') =>
   new ProblemException(401, 'unauthorized', 'Unauthorized', detail);
 export const forbidden = (detail = 'Your role does not allow this action') =>
   new ProblemException(403, 'forbidden', 'Forbidden', detail);
+/** A dependency (such as the identity provider) could not be asked right now; the caller may try again. */
+export const serviceUnavailable = (detail = 'The service is not available right now') =>
+  new ProblemException(503, 'service-unavailable', 'Service unavailable', detail);
 
 /** The SQLSTATE of a driver error. Drizzle wraps it, so the code may live on the cause. */
 export function pgCode(error: unknown): string | undefined {

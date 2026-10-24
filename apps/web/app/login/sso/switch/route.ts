@@ -9,8 +9,12 @@ export const dynamic = 'force-dynamic';
  */
 export async function GET(request: NextRequest) {
   const origin = appOrigin(request);
-  const config = await ssoConfig();
-  if (!config.enabled || !config.endSessionEndpoint || !config.clientId) {
+  const result = await ssoConfig();
+  if (result.status === 'unavailable') {
+    return NextResponse.redirect(new URL('/login?error=sso-unavailable', origin));
+  }
+  const config = result.status === 'enabled' ? result.config : undefined;
+  if (!config?.endSessionEndpoint || !config.clientId) {
     return NextResponse.redirect(new URL('/login', origin));
   }
   const url = new URL(config.endSessionEndpoint);

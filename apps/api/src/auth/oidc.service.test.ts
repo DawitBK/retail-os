@@ -88,6 +88,17 @@ const auth = {
 };
 const service = () => new OidcService(config, auth as never);
 
+const INTERNAL = 'http://sso:7300';
+const internalConfig: AuthConfig = {
+  ...config,
+  oidc: { issuer: ISSUER, clientId: 'shop', clientSecret: 'secret', internalUrl: INTERNAL },
+};
+const internalService = () => new OidcService(internalConfig, auth as never);
+const DISCOVERY_PATH = '/.well-known/openid-configuration';
+/** The addresses a fetch mock was called with, in order. */
+const called = (spy: { mock: { calls: unknown[][] } }) =>
+  spy.mock.calls.map(([url]) => String(url));
+
 afterEach(() => {
   vi.unstubAllGlobals();
   auth.loginWithVerifiedEmail.mockClear();
@@ -95,10 +106,13 @@ afterEach(() => {
 });
 
 describe('OidcService', () => {
-  it('reports itself disabled when no provider is configured', async () => {
+  it('reports itself disabled (200, not an error) when no provider is configured, without asking anyone', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
     const off = new OidcService({ ...config, oidc: undefined }, auth as never);
     expect(await off.publicConfig()).toEqual({ enabled: false });
     await expect(off.exchange(input)).rejects.toThrow();
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('advertises the provider authorization endpoint', async () => {
@@ -108,6 +122,180 @@ describe('OidcService', () => {
       authorizationEndpoint: `${ISSUER}/authorize`,
       endSessionEndpoint: `${ISSUER}/session/end`,
       clientId: 'shop',
+    });
+  });
+
+  it('keeps a successful discovery for later calls', async () => {
+    const fetchSpy = provider({});
+    vi.stubGlobal('fetch', fetchSpy);
+    const svc = service();
+    await svc.publicConfig();
+    await svc.publicConfig();
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  describe('when the provider cannot be asked', () => {
+    const good = (over: Record<string, unknown> = {}) =>
+      Response.json({
+        issuer: ISSUER,
+        authorization_endpoint: `${ISSUER}/authorize`,
+        token_endpoint: `${ISSUER}/token`,
+        userinfo_endpoint: `${ISSUER}/me`,
+        ...over,
+      });
+
+    it.each([
+      ['a network error', () => Promise.reject(new TypeError('fetch failed'))],
+      [
+        'a timeout',
+        () => Promise.reject(new DOMException('The operation timed out', 'TimeoutError')),
+      ],
+      ['a 500 answer', async () => new Response('down', { status: 500 })],
+      ['a 404 answer', async () => new Response('missing', { status: 404 })],
+      ['an answer that is not JSON', async () => new Response('<html>tunnel</html>')],
+      ['JSON that is not a document', async () => Response.json(null)],
+      ['a document without a token endpoint', async () => good({ token_endpoint: undefined })],
+      ['a document with a non-text address', async () => good({ jwks_uri: 42 })],
+      ['a document for another issuer', async () => good({ issuer: 'https://evil.example.com' })],
+    ])('answers 503, never "disabled", after %s', async (_label, answer) => {
+      vi.stubGlobal('fetch', vi.fn(answer));
+      await expect(service().publicConfig()).rejects.toMatchObject({
+        status: 503,
+        code: 'service-unavailable',
+      });
+    });
+
+    it('does not remember the failure: the next call asks again and recovers', async () => {
+      const fetchSpy = vi
+        .fn()
+        .mockRejectedValueOnce(new TypeError('fetch failed'))
+        .mockResolvedValueOnce(new Response('down', { status: 502 }))
+        .mockImplementation(provider({}));
+      vi.stubGlobal('fetch', fetchSpy);
+      const svc = service();
+
+      await expect(svc.publicConfig()).rejects.toMatchObject({ status: 503 });
+      await expect(svc.publicConfig()).rejects.toMatchObject({ status: 503 });
+      expect(await svc.publicConfig()).toMatchObject({
+        enabled: true,
+        authorizationEndpoint: `${ISSUER}/authorize`,
+        clientId: 'shop',
+      });
+      expect(fetchSpy).toHaveBeenCalledTimes(3);
+
+      await svc.publicConfig();
+      expect(fetchSpy).toHaveBeenCalledTimes(3);
+    });
+
+    it('also answers 503 (not "no account") to a sign-in and to a back-channel logout', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => Promise.reject(new TypeError('fetch failed'))),
+      );
+      await expect(service().exchange(input)).rejects.toMatchObject({ status: 503 });
+      await expect(service().handleBackchannelLogout(await logoutToken())).rejects.toMatchObject({
+        status: 503,
+      });
+      expect(auth.loginWithVerifiedEmail).not.toHaveBeenCalled();
+      expect(auth.revokeSessionsBySsoSubject).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('server calls and the internal provider address', () => {
+    it('asks the issuer for discovery, and calls the published addresses, when no internal address is set', async () => {
+      const spy = provider({ token: await idToken() });
+      vi.stubGlobal('fetch', spy);
+      await service().exchange(input);
+      expect(called(spy)).toEqual([
+        `${ISSUER}${DISCOVERY_PATH}`,
+        `${ISSUER}/token`,
+        `${ISSUER}/me`,
+      ]);
+    });
+
+    it('asks the internal address for discovery when one is set, and still accepts the public issuer', async () => {
+      const spy = provider({});
+      vi.stubGlobal('fetch', spy);
+      expect(await internalService().publicConfig()).toMatchObject({ enabled: true });
+      expect(called(spy)).toEqual([`${INTERNAL}${DISCOVERY_PATH}`]);
+    });
+
+    it('still checks the document issuer against the PUBLIC issuer, not the internal address', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () =>
+          Response.json({
+            issuer: INTERNAL,
+            authorization_endpoint: `${INTERNAL}/authorize`,
+            token_endpoint: `${INTERNAL}/token`,
+            userinfo_endpoint: `${INTERNAL}/me`,
+          }),
+        ),
+      );
+      await expect(internalService().publicConfig()).rejects.toMatchObject({ status: 503 });
+    });
+
+    it('sends the token and profile calls of a sign-in to the internal address', async () => {
+      const spy = provider({ token: await idToken() });
+      vi.stubGlobal('fetch', spy);
+      await internalService().exchange(input);
+      expect(called(spy)).toEqual([
+        `${INTERNAL}${DISCOVERY_PATH}`,
+        `${INTERNAL}/token`,
+        `${INTERNAL}/me`,
+      ]);
+      expect(auth.loginWithVerifiedEmail).toHaveBeenCalledWith('owner@shop.com', 'user-1');
+    });
+
+    it('fetches the signing keys of a back-channel logout from the internal address', async () => {
+      const spy = provider({});
+      vi.stubGlobal('fetch', spy);
+      await internalService().handleBackchannelLogout(await logoutToken());
+      expect(called(spy)).toContain(`${INTERNAL}/jwks`);
+      expect(called(spy).filter((url) => url.startsWith(ISSUER))).toEqual([]);
+      expect(auth.revokeSessionsBySsoSubject).toHaveBeenCalledWith('user-1');
+    });
+
+    it('leaves a server address that is not under the issuer alone', async () => {
+      const base = provider({ token: await idToken() });
+      const spy = vi.fn(async (url: string | URL) =>
+        String(url).endsWith(DISCOVERY_PATH)
+          ? Response.json({
+              issuer: ISSUER,
+              authorization_endpoint: `${ISSUER}/authorize`,
+              token_endpoint: 'https://other.example.com/token',
+              userinfo_endpoint: `${ISSUER}/me`,
+            })
+          : base(url),
+      );
+      vi.stubGlobal('fetch', spy);
+      await internalService().exchange(input);
+      expect(called(spy)).toEqual([
+        `${INTERNAL}${DISCOVERY_PATH}`,
+        'https://other.example.com/token',
+        `${INTERNAL}/me`,
+      ]);
+    });
+
+    it('keeps the addresses the browser uses public', async () => {
+      vi.stubGlobal('fetch', provider({}));
+      expect(await internalService().publicConfig()).toEqual({
+        enabled: true,
+        authorizationEndpoint: `${ISSUER}/authorize`,
+        endSessionEndpoint: `${ISSUER}/session/end`,
+        clientId: 'shop',
+      });
+    });
+
+    it('still answers 503 when the internal address cannot be reached', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => Promise.reject(new TypeError('fetch failed'))),
+      );
+      await expect(internalService().publicConfig()).rejects.toMatchObject({
+        status: 503,
+        code: 'service-unavailable',
+      });
     });
   });
 

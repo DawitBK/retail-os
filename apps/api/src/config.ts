@@ -18,6 +18,14 @@ export const envSchema = baseEnvSchema.extend({
   OIDC_ISSUER: z.url().optional(),
   OIDC_CLIENT_ID: z.string().min(1).optional(),
   OIDC_CLIENT_SECRET: z.string().min(1).optional(),
+  /**
+   * Single sign-on, optional: where THIS server reaches the provider (for example http://sso:7300), so server-to-server
+   * calls stay off the public internet. An absolute http or https URL without a trailing slash. Browsers keep using OIDC_ISSUER.
+   */
+  OIDC_INTERNAL_URL: z
+    .url({ protocol: /^https?$/, error: 'must be an absolute http or https URL' })
+    .refine((value) => !value.endsWith('/'), 'must not end with a slash')
+    .optional(),
   /** The shop's time zone: it decides which day a sale or an expense belongs to. */
   BUSINESS_TIMEZONE: z.string().min(1).default('Africa/Addis_Ababa'),
 });
