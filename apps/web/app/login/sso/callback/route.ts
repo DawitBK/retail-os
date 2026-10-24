@@ -22,6 +22,8 @@ export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const code = params.get('code');
   const state = params.get('state');
+  // The provider refused: this person holds no role in this application there.
+  if (params.get('error') === 'access_denied') return fail('no-access');
   if (!raw || !code || !state) return fail('sso');
   let flow: { state: string; nonce: string; verifier: string; next: string };
   try {
@@ -47,6 +49,7 @@ export async function GET(request: NextRequest) {
   } catch {
     return fail('unreachable');
   }
+  if (res.status === 403) return fail('no-access');
   if (res.status === 401) return fail('no-account');
   if (!res.ok) return fail('sso');
 

@@ -83,7 +83,7 @@ function provider(opts: { token?: string; info?: Record<string, unknown>; tokenS
 }
 
 const auth = {
-  loginWithVerifiedEmail: vi.fn(async (email: string) => ({ email }) as never),
+  loginWithVerifiedEmail: vi.fn(async (email: string, _subject?: string, _access?: unknown) => ({ email }) as never),
   revokeSessionsBySsoSubject: vi.fn(async () => 1),
 };
 const service = () => new OidcService(config, auth as never);
@@ -357,6 +357,38 @@ describe('OidcService', () => {
     vi.stubGlobal('fetch', provider({ token: await idToken() }));
     await service().exchange(input);
     expect(auth.loginWithVerifiedEmail).toHaveBeenCalledWith('owner@shop.com', 'user-1');
+  });
+
+  describe('the roles the provider manages for this application (app_roles)', () => {
+    const profile = { sub: 'user-1', email: 'Owner@Shop.com', email_verified: true, given_name: 'Abebe', family_name: 'Kebede' };
+
+    it('passes the roles and the names to the sign-in', async () => {
+      vi.stubGlobal('fetch', provider({ token: await idToken({ app_roles: ['manager', 'cashier'] }), info: profile }));
+      await service().exchange(input);
+      expect(auth.loginWithVerifiedEmail).toHaveBeenCalledWith('owner@shop.com', 'user-1', {
+        roles: ['manager', 'cashier'],
+        firstName: 'Abebe',
+        lastName: 'Kebede',
+      });
+    });
+
+    it('passes an empty list on (the provider says: no access), not "nothing sent"', async () => {
+      vi.stubGlobal('fetch', provider({ token: await idToken({ app_roles: [] }), info: profile }));
+      await service().exchange(input);
+      expect(auth.loginWithVerifiedEmail).toHaveBeenCalledWith('owner@shop.com', 'user-1', { roles: [], firstName: 'Abebe', lastName: 'Kebede' });
+    });
+
+    it('passes no access information when the provider sends no app_roles, so the person needs an existing account as before', async () => {
+      vi.stubGlobal('fetch', provider({ token: await idToken(), info: profile }));
+      await service().exchange(input);
+      expect(auth.loginWithVerifiedEmail.mock.calls[0]![2]).toBeUndefined();
+    });
+
+    it('reads the roles from the profile when the identity token does not carry them', async () => {
+      vi.stubGlobal('fetch', provider({ token: await idToken(), info: { ...profile, app_roles: ['owner'] } }));
+      await service().exchange(input);
+      expect(auth.loginWithVerifiedEmail.mock.calls[0]![2]).toMatchObject({ roles: ['owner'] });
+    });
   });
 
   it('refuses a wrong nonce, a wrong audience and an unverified email', async () => {

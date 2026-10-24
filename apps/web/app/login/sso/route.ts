@@ -27,7 +27,8 @@ export async function GET(request: NextRequest) {
   url.search = new URLSearchParams({
     client_id: config.clientId,
     response_type: 'code',
-    scope: 'openid email profile',
+    // app_roles: the provider sends the roles it gave this person here, when it manages this application's access.
+    scope: 'openid email profile app_roles',
     redirect_uri: `${origin}/login/sso/callback`,
     state,
     nonce,

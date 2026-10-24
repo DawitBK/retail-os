@@ -13,9 +13,10 @@ import argon2 from 'argon2';
 import { and, asc, count, eq, ilike, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { recordAudit } from '../common/audit.js';
 import { AUTH_CONFIG, type AuthConfig, type Principal, TokenService } from '../common/auth.js';
-import { escapeLike, pgCode, unauthorized, versionConflict } from '../common/errors.js';
+import { escapeLike, forbidden, pgCode, unauthorized, versionConflict } from '../common/errors.js';
 import { DB, type Database, type Tx } from '../db/db.module.js';
 import { refreshTokens, users, type UserRow } from '../db/schema.js';
+import { namesFrom, roleFromIdp, type SsoAccess } from './sso-access.js';
 import type {
   ChangePassword,
   CreateStaff,
@@ -100,15 +101,53 @@ export class AuthService {
   }
 
   /**
-   * Sign in someone the identity provider vouches for (single sign-on); they must already have an active account. The provider's id for the person
-   * is bound to the account at the first sign-in; after that the SAME email with a DIFFERENT id is refused (an address given to someone else later
-   * must not inherit the account).
+   * Sign in someone the identity provider vouches for (single sign-on). The provider's id for the person is bound to the account at the first
+   * sign-in; after that the SAME email with a DIFFERENT id is refused (an address given to someone else later must not inherit the account).
+   *
+   * Without `access` (the provider does not manage this application's access) the person must already have an active account here.
+   * With it, the provider decides: no recognised role means no access (403); otherwise the account is created at the first sign-in when it is
+   * missing, and its role is set to the provider's at EVERY sign-in, so a change made in the provider's console is in force at the next one.
+   * A person switched off here is still refused: the provider does not override that.
    */
-  async loginWithVerifiedEmail(email: string, subject: string): Promise<TokenPair> {
-    const [user] = await this.db
-      .select()
-      .from(users)
-      .where(and(eq(users.email, email), isNull(users.deletedAt)));
+  async loginWithVerifiedEmail(email: string, subject: string, access?: SsoAccess): Promise<TokenPair> {
+    const role = access ? roleFromIdp(access.roles) : undefined;
+    if (access && !role) {
+      throw forbidden('You have not been given access to Retail OS. Ask an administrator to give you a role in the identity provider.');
+    }
+    const find = () =>
+      this.db
+        .select()
+        .from(users)
+        .where(and(eq(users.email, email), isNull(users.deletedAt)));
+    let [user] = await find();
+    if (!user && role && access) {
+      try {
+        user = await this.db.transaction(async (tx) => {
+          const [row] = await tx
+            .insert(users)
+            .values({
+              email,
+              // Nobody knows this password: the account is for single sign-on until an administrator sets one.
+              passwordHash: await hashPassword(randomBytes(32).toString('base64url')),
+              ...namesFrom(access, email),
+              role,
+            })
+            .returning();
+          await recordAudit(tx, {
+            actor: 'identity-provider',
+            action: 'staff.created-by-sso',
+            entityType: 'user',
+            entityId: row!.id,
+            after: toUserDto(row!),
+          });
+          return row!;
+        });
+      } catch (e) {
+        // Two first sign-ins at once: the other one created it.
+        if (pgCode(e) !== '23505') throw e;
+        [user] = await find();
+      }
+    }
     if (!user || !user.active) throw unauthorized('There is no active account for this identity');
     if (user.ssoSubject && user.ssoSubject !== subject) {
       throw unauthorized(
@@ -123,6 +162,26 @@ export class AuthService {
           throw unauthorized('This sign-in is already bound to another account');
         throw e;
       }
+    }
+    if (role && user.role !== role) {
+      const before = toUserDto(user);
+      const current = user;
+      user = await this.db.transaction(async (tx) => {
+        const [row] = await tx
+          .update(users)
+          .set({ role, version: sql`${users.version} + 1`, updatedAt: sql`now()` })
+          .where(eq(users.id, current.id))
+          .returning();
+        await recordAudit(tx, {
+          actor: 'identity-provider',
+          action: 'staff.role-set-by-sso',
+          entityType: 'user',
+          entityId: row!.id,
+          before,
+          after: toUserDto(row!),
+        });
+        return row!;
+      });
     }
     return this.issue(user, randomUUID());
   }
