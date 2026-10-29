@@ -10,14 +10,16 @@ but nothing in the rules is specific to one shop.
 
 ## What it does
 
-| Area          | Behaviour                                                                                                                                                                         |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Point of sale | prices every line from the catalogue, takes stock at cost, posts revenue and cost of goods sold together; cash, bank, mobile money and credit; change; manager-approved discounts |
-| Inventory     | stock and its value change only through immutable movements; weighted average cost; the last unit out takes the exact value left, so rounding never drifts                        |
-| Purchasing    | purchase orders, partial receipts, supplier payments; what is owed is exactly what has arrived and not been paid for                                                              |
-| Credit        | customer credit limits enforced under concurrency; payments against credit sales; what a customer owes is derived from the sales                                                  |
-| Accounting    | chart of accounts, journal, ledgers with running balance, trial balance, profit and loss, balance sheet, expenses, opening balances                                               |
-| Control       | roles owner, manager, accountant, cashier; audit trail; voids reverse instead of delete; idempotent sales                                                                         |
+| Area          | Behaviour                                                                                                                                                                                                       |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Point of sale | prices every line from the catalogue, takes stock at cost, posts revenue and cost of goods sold together; cash, bank, mobile money and credit; change; manager-approved discounts                               |
+| Inventory     | stock and its value change only through immutable movements; weighted average cost; the last unit out takes the exact value left, so rounding never drifts                                                      |
+| Purchasing    | purchase orders, partial receipts, supplier payments; what is owed is exactly what has arrived and not been paid for                                                                                            |
+| Credit        | customer credit limits enforced under concurrency; payments against credit sales; what a customer owes is derived from the sales                                                                                |
+| Accounting    | chart of accounts, journal, ledgers with running balance, trial balance, profit and loss, balance sheet, expenses, opening balances                                                                             |
+| Insight       | alerts, dashboard, stock efficiency (turnover, days of inventory, GMROI), profit by group, cash flow statement, monthly trajectory, forecasts and purchase suggestions ([docs/analytics.md](docs/analytics.md)) |
+| Import        | catalogue and opening stock from a CSV file, all rows or none, with a dry run                                                                                                                                   |
+| Control       | roles owner, manager, accountant, cashier; audit trail; voids reverse instead of delete; idempotent sales                                                                                                       |
 
 Money is integer minor units (santim), never a float.
 
@@ -60,6 +62,16 @@ There is no public sign-up: the first owner is created with `owner:bootstrap`, w
 run once one exists, and the owner creates the other staff. The contract is at
 `http://localhost:3000/openapi.json`.
 
+## Demo data
+
+```sh
+DEMO_STAFF_PASSWORD='a long passphrase' pnpm --filter @retail/api seed:demo   # after owner:bootstrap
+```
+
+Six months of connected trading (about 1,900 sales, purchases, returns, damage, stock counts,
+expenses) replayed through the real services, so the books and the shelves agree. Safe to run again.
+Details, options and the production guard are in [docs/demo-data.md](docs/demo-data.md).
+
 ## Test it
 
 ```sh
@@ -77,7 +89,7 @@ apps/api/        the HTTP API (NestJS)
 apps/web/        the till, back office and statements (Next.js; session kept server-side, ADR 0004)
 packages/kit/    shared building blocks: env, logging, problem+json, pagination, health, OpenAPI
 packages/config/ shared TypeScript and ESLint presets
-docs/            ADRs, the accounting rules, the enterprise-bar scorecard
+docs/            ADRs, the accounting rules, analytics formulas, demo data, the enterprise-bar scorecard
 ```
 
 Licensed under Apache-2.0.

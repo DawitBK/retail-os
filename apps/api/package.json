@@ -14,7 +14,8 @@
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node dist/db/migrate.js",
-    "owner:bootstrap": "node dist/bootstrap-admin.js"
+    "owner:bootstrap": "node dist/bootstrap-admin.js",
+    "seed:demo": "node dist/seed-demo.js"
   },
   "dependencies": {
     "@retail/kit": "workspace:*",
