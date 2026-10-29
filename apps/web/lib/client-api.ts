@@ -6,6 +6,8 @@ export interface CallResult<T> {
   data?: T;
   message?: string;
   fieldErrors?: Record<string, string>;
+  /** The API's list of problems, in order and unmerged (a file import can report hundreds of rows). */
+  errors?: { path: string; message: string }[];
 }
 
 /** Browser call to the API through the web server's /bff route; it adds the token. */
@@ -32,14 +34,17 @@ export async function call<T>(
     errors?: { path?: string; message?: string }[];
   };
   const fieldErrors: Record<string, string> = {};
+  const errors: { path: string; message: string }[] = [];
   for (const e of problem.errors ?? []) {
     if (e.path && e.message) fieldErrors[e.path] = e.message;
+    if (e.message) errors.push({ path: e.path ?? '', message: e.message });
   }
   return {
     ok: false,
     status: res.status,
     message: problem.detail ?? problem.title ?? `Request failed (${res.status})`,
     fieldErrors,
+    errors,
   };
 }
 

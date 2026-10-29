@@ -61,3 +61,10 @@ export function pct(value: number | null | undefined): string {
 export function label(value: string): string {
   return value.charAt(0) + value.slice(1).toLowerCase().replace(/_/g, ' ');
 }
+
+const compact = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 });
+
+/** Short money for chart axes: 50,000,000 minor units -> "500K". No currency symbol. */
+export function formatMoneyCompact(minor: number): string {
+  return compact.format(minor / 100);
+}

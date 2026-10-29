@@ -55,6 +55,21 @@ export async function apiOrNull<T>(path: string): Promise<T | null> {
   }
 }
 
+export type Safe<T> = { ok: true; data: T } | { ok: false; status: number; message: string };
+
+/**
+ * Like api(), but any refusal from the API (403, 404, 422, 500 ...) comes back as a message the page
+ * can show instead of an error page. A missing session still redirects to the login page.
+ */
+export async function apiSafe<T>(path: string): Promise<Safe<T>> {
+  try {
+    return { ok: true, data: await api<T>(path) };
+  } catch (e) {
+    if (e instanceof ApiError) return { ok: false, status: e.status, message: e.message };
+    throw e;
+  }
+}
+
 export function qs(params: Record<string, string | number | undefined | null>): string {
   const sp = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {

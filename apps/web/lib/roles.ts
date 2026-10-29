@@ -25,6 +25,7 @@ export const NAV: NavItem[] = [
     roles: ['owner', 'manager', 'accountant', 'cashier'],
     group: 'Sell',
   },
+  { href: '/returns', label: 'Returns', roles: WATCHERS, group: 'Sell' },
   {
     href: '/customers',
     label: 'Customers',
@@ -37,15 +38,19 @@ export const NAV: NavItem[] = [
     roles: ['owner', 'manager', 'accountant', 'cashier'],
     group: 'Stock',
   },
+  { href: '/inventory', label: 'Inventory', roles: WATCHERS, group: 'Stock' },
   { href: '/alerts', label: 'Alerts', roles: WATCHERS, group: 'Stock' },
   { href: '/damage', label: 'Damage', roles: FLOOR, group: 'Stock' },
   { href: '/stock-audits', label: 'Stock counts', roles: FLOOR, group: 'Stock' },
   { href: '/purchases', label: 'Purchases', roles: WATCHERS, group: 'Buy' },
+  { href: '/forecasting', label: 'Forecasting', roles: MANAGERS, group: 'Buy' },
   { href: '/suppliers', label: 'Suppliers', roles: WATCHERS, group: 'Buy' },
   { href: '/accounting', label: 'Statements', roles: WATCHERS, group: 'Books' },
+  { href: '/analytics', label: 'Analytics', roles: WATCHERS, group: 'Books' },
   { href: '/accounting/journal', label: 'Journal', roles: WATCHERS, group: 'Books' },
   { href: '/accounting/expenses', label: 'Expenses', roles: WATCHERS, group: 'Books' },
   { href: '/staff', label: 'Staff', roles: ['owner'], group: 'Admin' },
+  { href: '/import', label: 'Import', roles: ['owner'], group: 'Admin' },
 ];
 
 /** Where a role lands after signing in. */

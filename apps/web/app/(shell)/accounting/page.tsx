@@ -1,9 +1,11 @@
 import Link from 'next/link';
-import { Badge, PageHeader, Stat, Table } from '@/components/ui';
+import { Badge, Notice, PageHeader, Stat, Table } from '@/components/ui';
+import { PrintButton } from '@/components/print-button';
 import { formatMoney, monthStart, pct, today } from '@/lib/format';
-import { api } from '@/lib/server-api';
+import { api, apiSafe, qs } from '@/lib/server-api';
 import type {
   BalanceSheet,
+  CashFlowStatement,
   InventoryValuation,
   ProfitLoss,
   StatementLine,
@@ -16,6 +18,7 @@ const VIEWS = [
   ['profit-loss', 'Profit and loss'],
   ['balance-sheet', 'Balance sheet'],
   ['trial-balance', 'Trial balance'],
+  ['cash-flow', 'Cash flow'],
   ['valuation', 'Stock valuation'],
 ] as const;
 
@@ -73,7 +76,26 @@ export default async function StatementsPage({ searchParams }: { searchParams: P
         </form>
       )}
 
+      <p className="mb-3 hidden text-lg font-semibold print:block">
+        {VIEWS.find(([v]) => v === view)?.[1]}
+        {view === 'balance-sheet'
+          ? ` as of ${asOf}`
+          : view === 'valuation'
+            ? ''
+            : `, ${from} to ${to}`}
+      </p>
+
+      {view !== 'valuation' ? (
+        <div className="no-print mb-4 flex flex-wrap gap-2">
+          <a className="btn" href={`/accounting/export${qs({ view, from, to, asOf })}`} download>
+            Export CSV
+          </a>
+          <PrintButton label="Print or save as PDF" />
+        </div>
+      ) : null}
+
       {view === 'profit-loss' ? <ProfitLossView from={from} to={to} /> : null}
+      {view === 'cash-flow' ? <CashFlowView from={from} to={to} /> : null}
       {view === 'balance-sheet' ? <BalanceSheetView asOf={asOf} /> : null}
       {view === 'trial-balance' ? <TrialBalanceView from={from} to={to} /> : null}
       {view === 'valuation' ? <ValuationView /> : null}
@@ -155,6 +177,90 @@ async function ProfitLossView({ from, to }: { from: string; to: string }) {
         total={p.totalExpensesMinor}
         totalLabel="Total expenses"
       />
+    </div>
+  );
+}
+
+function CashLines({
+  title,
+  lines,
+  total,
+  totalLabel,
+}: {
+  title: string;
+  lines: { label: string; amountMinor: number }[];
+  total: number;
+  totalLabel: string;
+}) {
+  return (
+    <section className="card overflow-hidden">
+      <h2 className="border-b border-line bg-surface px-3 py-2 text-sm font-semibold">{title}</h2>
+      <table className="w-full">
+        <caption className="sr-only">{title}</caption>
+        <tbody className="divide-y divide-line">
+          {lines.map((l) => (
+            <tr key={l.label}>
+              <td className="td">{l.label}</td>
+              <td className="td text-right tabular-nums">{formatMoney(l.amountMinor)}</td>
+            </tr>
+          ))}
+          {lines.length === 0 ? (
+            <tr>
+              <td className="td text-muted" colSpan={2}>
+                Nothing in this period.
+              </td>
+            </tr>
+          ) : null}
+          <tr className="font-semibold">
+            <td className="td">{totalLabel}</td>
+            <td className="td text-right tabular-nums">{formatMoney(total)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+async function CashFlowView({ from, to }: { from: string; to: string }) {
+  const r = await apiSafe<CashFlowStatement>(`/accounting/cash-flow${qs({ from, to })}`);
+  if (!r.ok) return <Notice tone="bad">{r.message}</Notice>;
+  const c = r.data;
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Stat label="Opening cash" value={formatMoney(c.openingCashMinor)} />
+        <Stat label="Receipts" value={formatMoney(c.totalReceiptsMinor)} />
+        <Stat label="Payments" value={formatMoney(c.totalPaymentsMinor)} />
+        <Stat
+          label="Closing cash"
+          value={formatMoney(c.closingCashMinor)}
+          tone={c.closingCashMinor < 0 ? 'bad' : undefined}
+          hint={`Net change ${formatMoney(c.netChangeMinor)}`}
+        />
+      </div>
+      <div>
+        {c.reconciled ? (
+          <Badge tone="good">
+            Closing cash equals cash in hand plus cash at the bank in the books
+          </Badge>
+        ) : (
+          <Badge tone="bad">Closing cash differs from the cash accounts in the books</Badge>
+        )}
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <CashLines
+          title="Receipts"
+          lines={c.receipts}
+          total={c.totalReceiptsMinor}
+          totalLabel="Total receipts"
+        />
+        <CashLines
+          title="Payments"
+          lines={c.payments}
+          total={c.totalPaymentsMinor}
+          totalLabel="Total payments"
+        />
+      </div>
     </div>
   );
 }

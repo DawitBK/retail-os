@@ -332,3 +332,229 @@ export interface InventoryValuation {
   inventoryAccountMinor: number;
   reconciled: boolean;
 }
+
+// ---- analytics, forecasting, returns, import ----
+
+export type Movement = 'FAST' | 'NORMAL' | 'SLOW' | 'DEAD';
+export type StockFlag = 'OUT_OF_STOCK' | 'LOW_STOCK' | 'NEGATIVE_MARGIN';
+export type ProfitabilityBy = 'category' | 'sub-category' | 'brand' | 'product';
+
+export interface ProductHealth {
+  id: string;
+  sku: string;
+  name: string;
+  category: string;
+  brand: string | null;
+  currentStock: number;
+  reorderPoint: number;
+  averageCostMinor: number;
+  sellingPriceMinor: number;
+  marginPct: number | null;
+  stockValueMinor: number;
+  unitsSold30: number;
+  velocityPerDay: number;
+  daysOfStock: number | null;
+  movement: Movement;
+  outOfStock: boolean;
+  lowStock: boolean;
+  negativeMargin: boolean;
+  lastSoldAt: string | null;
+}
+
+export interface ProductAnalytics {
+  productId: string;
+  name: string;
+  velocityPerDay: number;
+  unitsSold30: number;
+  daysOfStock: number | null;
+  marginPct: number | null;
+  daysInventoryOutstanding: number | null;
+  gmroi: number | null;
+  stockCoverageDays: number | null;
+  capitalLockedMinor: number;
+  last30Days: { date: string; units: number }[];
+}
+
+export interface InventoryAnalytics {
+  asOf: string;
+  windowDays: number;
+  cogsMinor: number;
+  grossProfitMinor: number;
+  openingValueMinor: number;
+  closingValueMinor: number;
+  averageValueMinor: number;
+  turnover: number | null;
+  daysInventoryOutstanding: number | null;
+  gmroi: number | null;
+  sellThroughPct: number | null;
+  unitsSold: number;
+  unitsReceived: number;
+  deadStockValueMinor: number;
+  shrinkagePct: number | null;
+  aging: { bucket: '0-30' | '31-60' | '61-90' | '90+'; products: number; valueMinor: number }[];
+  deadStock: {
+    productId: string;
+    name: string;
+    stock: number;
+    daysSinceLastSale: number;
+    capitalLockedMinor: number;
+  }[];
+}
+
+export interface Profitability {
+  by: ProfitabilityBy;
+  from: string;
+  to: string;
+  rows: {
+    key: string;
+    name: string;
+    unitsSold: number;
+    revenueMinor: number;
+    cogsMinor: number;
+    grossProfitMinor: number;
+    marginPct: number | null;
+  }[];
+}
+
+export interface CashflowAnalytics {
+  weeks: {
+    weekStart: string;
+    inflowMinor: number;
+    outflowMinor: number;
+    netMinor: number;
+    endingCashMinor: number;
+  }[];
+  payablesAging: { bucket: string; amountMinor: number; count: number }[];
+  receivablesAging: { bucket: string; amountMinor: number; count: number }[];
+}
+
+export interface Trajectory {
+  months: {
+    month: string;
+    revenueMinor: number;
+    cogsMinor: number;
+    grossProfitMinor: number;
+    grossMarginPct: number | null;
+    expensesMinor: number;
+    expenseRatioPct: number | null;
+    netProfitMinor: number;
+    endingCashMinor: number;
+    inventoryValueMinor: number;
+  }[];
+}
+
+export interface CashFlowStatement {
+  from: string;
+  to: string;
+  openingCashMinor: number;
+  receipts: { label: string; amountMinor: number }[];
+  payments: { label: string; amountMinor: number }[];
+  totalReceiptsMinor: number;
+  totalPaymentsMinor: number;
+  netChangeMinor: number;
+  closingCashMinor: number;
+  reconciled: boolean;
+}
+
+export interface ReorderForecast {
+  asOf: string;
+  leadTimeDays: number;
+  note: string;
+  rows: {
+    productId: string;
+    sku: string;
+    name: string;
+    currentStock: number;
+    reorderPoint: number;
+    velocityPerDay: number;
+    daysUntilStockout: number | null;
+    stockoutDate: string | null;
+    reorderByDate: string | null;
+    urgencyScore: number;
+  }[];
+}
+
+export interface DeadStockForecast {
+  asOf: string;
+  note: string;
+  rows: {
+    productId: string;
+    sku: string;
+    name: string;
+    currentStock: number;
+    daysSinceLastSale: number;
+    capitalLockedMinor: number;
+    riskScore: number;
+  }[];
+}
+
+export interface SalesForecast {
+  asOf: string;
+  note: string;
+  rows: {
+    productId: string;
+    sku: string;
+    name: string;
+    currentStock: number;
+    unitsSold30: number;
+    predictedUnits30: number;
+    predictedRevenueMinor: number;
+    predictedEndStock: number;
+  }[];
+}
+
+export interface PurchaseSuggestions {
+  asOf: string;
+  note: string;
+  suppliers: {
+    supplierId: string | null;
+    supplierName: string;
+    totalMinor: number;
+    lines: {
+      productId: string;
+      name: string;
+      currentStock: number;
+      suggestedQty: number;
+      unitCostMinor: number;
+      lineTotalMinor: number;
+    }[];
+  }[];
+}
+
+export interface SaleReturn {
+  id: string;
+  number: string;
+  saleId: string;
+  reason: string;
+  refundMinor: number;
+  appliedToReceivableMinor: number;
+  cashRefundMinor: number;
+  refundMethod: SettlementMethod | null;
+  createdAt: string;
+}
+
+export interface PurchaseReturn {
+  id: string;
+  number: string;
+  purchaseId: string;
+  reason: string;
+  valueMinor: number;
+  creditAppliedMinor: number;
+  refundMinor: number;
+  refundMethod: SettlementMethod | null;
+  createdAt: string;
+}
+
+export interface ImportReport {
+  applied: boolean;
+  dryRun: boolean;
+  rows: number;
+  categoriesCreated: number;
+  subCategoriesCreated: number;
+  brandsCreated: number;
+  productsCreated: number;
+  skippedExisting: string[];
+  stockUnits: number;
+  stockValueMinor: number;
+  entryNumber: string | null;
+}

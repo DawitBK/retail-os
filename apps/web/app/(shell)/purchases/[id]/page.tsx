@@ -2,10 +2,10 @@ import { notFound } from 'next/navigation';
 import { Badge, PageHeader, Stat, Table, statusTone } from '@/components/ui';
 import { ActionButton } from '@/components/form';
 import { formatDate, formatMoney, label } from '@/lib/format';
-import { MANAGERS, can } from '@/lib/roles';
+import { MANAGERS, WATCHERS, can } from '@/lib/roles';
 import { api, apiOrNull } from '@/lib/server-api';
-import type { Purchase, Supplier, User } from '@/lib/types';
-import { PayPurchase, ReceivePurchase } from './purchase-actions';
+import type { Page, Purchase, PurchaseReturn, Supplier, User } from '@/lib/types';
+import { PayPurchase, ReceivePurchase, ReturnToSupplier } from './purchase-actions';
 
 export const metadata = { title: 'Purchase order' };
 
@@ -15,7 +15,11 @@ export default async function PurchasePage({ params }: { params: Promise<{ id: s
   const p = await apiOrNull<Purchase>(`/purchases/${id}`);
   if (!p) notFound();
   const supplier = await apiOrNull<Supplier>(`/suppliers/${p.supplierId}`);
+  const returns = can(me.role, WATCHERS)
+    ? await apiOrNull<Page<PurchaseReturn>>(`/purchase-returns?purchaseId=${id}`)
+    : null;
   const manager = can(me.role, MANAGERS);
+  const hasReceived = p.items.some((i) => i.receivedQty > 0);
   const open = p.status === 'ORDERED' || p.status === 'PARTIALLY_RECEIVED';
 
   return (
@@ -61,6 +65,9 @@ export default async function PurchasePage({ params }: { params: Promise<{ id: s
       <div className="no-print mt-5 flex flex-wrap gap-2">
         {manager && open ? <ReceivePurchase purchase={p} /> : null}
         {p.payableMinor > 0 ? <PayPurchase purchase={p} /> : null}
+        {manager && hasReceived && p.status !== 'CANCELLED' ? (
+          <ReturnToSupplier purchase={p} />
+        ) : null}
         {manager && p.status === 'ORDERED' ? (
           <ActionButton
             label="Cancel order"
@@ -70,6 +77,27 @@ export default async function PurchasePage({ params }: { params: Promise<{ id: s
           />
         ) : null}
       </div>
+
+      {returns && returns.items.length > 0 ? (
+        <section className="mt-6">
+          <h2 className="mb-2 text-sm font-semibold">Returns to the supplier</h2>
+          <Table
+            head={['Number', 'Date', 'Reason', '>Credit', '>Set against debt', '>Paid back']}
+            caption="Returns to the supplier on this order"
+          >
+            {returns.items.map((r) => (
+              <tr key={r.id}>
+                <td className="td font-medium">{r.number}</td>
+                <td className="td whitespace-nowrap">{formatDate(r.createdAt)}</td>
+                <td className="td">{r.reason}</td>
+                <td className="td text-right tabular-nums">{formatMoney(r.valueMinor)}</td>
+                <td className="td text-right tabular-nums">{formatMoney(r.creditAppliedMinor)}</td>
+                <td className="td text-right tabular-nums">{formatMoney(r.refundMinor)}</td>
+              </tr>
+            ))}
+          </Table>
+        </section>
+      ) : null}
     </>
   );
 }

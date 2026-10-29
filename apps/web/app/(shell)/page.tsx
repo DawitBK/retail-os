@@ -1,17 +1,22 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { Empty, PageHeader, Stat, Table } from '@/components/ui';
+import { formatDays, formatRate } from '@/lib/analytics';
 import { formatMoney, pct } from '@/lib/format';
-import { homeFor } from '@/lib/roles';
-import { api } from '@/lib/server-api';
-import type { Dashboard, User } from '@/lib/types';
+import { MANAGERS, can, homeFor } from '@/lib/roles';
+import { api, apiSafe } from '@/lib/server-api';
+import type { Dashboard, ReorderForecast, User } from '@/lib/types';
 
 export const metadata = { title: 'Dashboard' };
 
 export default async function DashboardPage() {
   const me = await api<User>('/me');
   if (homeFor(me.role) !== '/') redirect(homeFor(me.role));
-  const d = await api<Dashboard>('/dashboard');
+  const [d, reorder] = await Promise.all([
+    api<Dashboard>('/dashboard'),
+    // Only the people who buy see this; a refusal just leaves the table out.
+    can(me.role, MANAGERS) ? apiSafe<ReorderForecast>('/forecasting/reorder?limit=8') : null,
+  ]);
   const max = Math.max(1, ...d.revenue30Days.map((x) => x.revenueMinor));
 
   return (
@@ -121,6 +126,38 @@ export default async function DashboardPage() {
           )}
         </section>
       </div>
+
+      {reorder?.ok ? (
+        <section aria-label="Reorder needed" className="mt-5">
+          <div className="mb-2 flex items-center justify-between">
+            <h2 className="text-sm font-semibold">Reorder needed</h2>
+            <Link className="text-sm text-brand hover:underline" href="/forecasting">
+              All forecasts
+            </Link>
+          </div>
+          {reorder.data.rows.length === 0 ? (
+            <Empty>Nothing needs reordering soon.</Empty>
+          ) : (
+            <Table
+              head={['Product', '>Stock', '>Sold per day', '>Days until stockout']}
+              caption="Products that will run out soonest"
+            >
+              {reorder.data.rows.map((r) => (
+                <tr key={r.productId}>
+                  <td className="td">
+                    <Link className="hover:underline" href={`/inventory/${r.productId}`}>
+                      {r.name}
+                    </Link>
+                  </td>
+                  <td className="td text-right tabular-nums">{r.currentStock}</td>
+                  <td className="td text-right tabular-nums">{formatRate(r.velocityPerDay)}</td>
+                  <td className="td text-right tabular-nums">{formatDays(r.daysUntilStockout)}</td>
+                </tr>
+              ))}
+            </Table>
+          )}
+        </section>
+      ) : null}
     </>
   );
 }

@@ -2,7 +2,7 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import type { Page } from '@/lib/types';
 
-type Tone = 'neutral' | 'good' | 'warn' | 'bad' | 'info';
+export type Tone = 'neutral' | 'good' | 'warn' | 'bad' | 'info' | 'orange';
 
 const TONES: Record<Tone, string> = {
   neutral: 'bg-surface text-muted border border-line',
@@ -10,6 +10,7 @@ const TONES: Record<Tone, string> = {
   warn: 'bg-warn/15 text-ink',
   bad: 'bg-bad/10 text-bad',
   info: 'bg-brand/10 text-brand',
+  orange: 'bg-orange-100 text-orange-800',
 };
 
 export function Badge({ tone = 'neutral', children }: { tone?: Tone; children: ReactNode }) {
@@ -40,6 +41,22 @@ export function statusTone(status: string): Tone {
     case 'IN_PROGRESS':
     case 'INFO':
       return 'info';
+    default:
+      return 'neutral';
+  }
+}
+
+/** How fast a product sells: green for fast, blue for normal, yellow for slow, red for dead. */
+export function movementTone(movement: string): Tone {
+  switch (movement) {
+    case 'FAST':
+      return 'good';
+    case 'NORMAL':
+      return 'info';
+    case 'SLOW':
+      return 'warn';
+    case 'DEAD':
+      return 'bad';
     default:
       return 'neutral';
   }
@@ -115,10 +132,25 @@ export function Notice({
   );
 }
 
-export function Table({ head, children }: { head: string[]; children: ReactNode }) {
+/** Shown instead of a page the signed-in role may not use; the API would refuse it anyway. */
+export function NoAccess({ what }: { what: string }) {
+  return <Notice tone="bad">Your role cannot see {what}. Ask the owner if you need it.</Notice>;
+}
+
+export function Table({
+  head,
+  caption,
+  children,
+}: {
+  head: string[];
+  /** Read out by screen readers to say what the table holds; not shown. */
+  caption?: string;
+  children: ReactNode;
+}) {
   return (
     <div className="card overflow-x-auto">
       <table className="w-full min-w-max border-collapse">
+        {caption ? <caption className="sr-only">{caption}</caption> : null}
         <thead className="border-b border-line">
           <tr>
             {head.map((h, i) => (

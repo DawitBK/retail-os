@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { label, parseMoney, toInput } from './format';
+import { formatMoneyCompact, label, parseMoney, toInput } from './format';
 
 describe('money input', () => {
   it('parses plain amounts into minor units', () => {
@@ -23,5 +23,13 @@ describe('money input', () => {
 
   it('labels enum values', () => {
     expect(label('BANK_TRANSFER')).toBe('Bank transfer');
+  });
+});
+
+describe('axis money', () => {
+  it('shortens large amounts for chart axes', () => {
+    expect(formatMoneyCompact(0)).toBe('0');
+    expect(formatMoneyCompact(50_000_000)).toBe('500K');
+    expect(formatMoneyCompact(-250_000_000)).toBe('-2.5M');
   });
 });
