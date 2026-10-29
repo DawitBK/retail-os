@@ -331,10 +331,12 @@ export async function seedDemo(
 
     // Demand: cheap things sell more; the pace is scaled so the shop does a believable number of items a day.
     const subMeta = new Map(SUB_CATEGORIES.map((s) => [s.name, s]));
-    const rawDemand = PRODUCTS.map(([sub, name, , , price]) => {
+    const rawDemand = PRODUCTS.map(([sub, name, , cost, price]) => {
       const tier =
         price < 300 ? 1.6 : price < 800 ? 0.9 : price < 2000 ? 0.45 : price < 6000 ? 0.15 : 0.06;
-      return tier * (0.7 + (hash(sub) % 8) / 10) * (0.6 + (hash(name) % 10) / 11);
+      // Whatever sells below its cost is on the shelf by mistake, not by demand: it sells slowly.
+      const mistake = price < cost ? 0.25 : 1;
+      return mistake * tier * (0.7 + (hash(sub) % 8) / 10) * (0.6 + (hash(name) % 10) / 11);
     });
     const demandScale = 40 / rawDemand.reduce((s, d) => s + d, 0);
     const catalogue: ProductInfo[] = [];
@@ -500,6 +502,18 @@ export async function seedDemo(
       const month = Number(day.slice(5, 7));
       const daysLeft = daysTotal - 1 - di;
       const stock = await stockNow();
+      /** Units a day each product really sold over the last 30 days: what a buyer would go by. */
+      const pace = new Map(
+        (
+          await q<{ id: string; units: string }>(
+            `select si.product_id as id, sum(si.quantity - si.returned_qty) as units
+               from sale_items si join sales s on s.id = si.sale_id
+              where s.status = 'COMPLETED' and (s.sale_date at time zone $1)::date >= $2::date - 30
+              group by 1`,
+            [tz, day],
+          )
+        ).map((r) => [r.id, Number(r.units) / 30]),
+      );
       const active = (p: ProductInfo) => !(p.kind === 'dormant' && di > 55);
 
       // 08:30 expenses on their usual days
@@ -623,9 +637,10 @@ export async function seedDemo(
               [p.id],
             ))!.n,
           );
-          const floor = Math.max(3, Math.ceil(p.demand * 28));
+          const rate = di < 21 ? p.demand : Math.max(p.demand * 0.5, pace.get(p.id) ?? 0);
+          const floor = Math.max(3, Math.ceil(rate * 28));
           if (onHand + inOrder >= floor) continue;
-          const target = Math.max(floor + 2, Math.ceil(p.demand * 45));
+          const target = Math.max(floor + 2, Math.ceil(rate * 45));
           const list = wanted.get(p.supplier) ?? [];
           list.push({
             p,
@@ -980,6 +995,33 @@ export async function seedDemo(
       }
       if (di % 30 === 0) log(`  ${day}: ${counts['sales']} sales so far`);
     }
+
+    // The manager sets reorder points from what really sold, as a shop does after a few months.
+    await once('tune-reorder-points', async () => {
+      at(today, '20:00');
+      const rows = await q<{ id: string; version: number; units: string }>(
+        `select p.id, p.version, coalesce(v.units, 0) as units
+           from products p
+           left join (
+             select si.product_id, sum(si.quantity - si.returned_qty) as units
+               from sale_items si join sales s on s.id = si.sale_id
+              where s.status = 'COMPLETED' and (s.sale_date at time zone $1)::date >= $2::date - 90
+              group by 1
+           ) v on v.product_id = p.id
+          where p.deleted_at is null and p.description = '${DEMO_NOTE}'`,
+        [tz, today],
+      );
+      for (const r of rows) {
+        const velocity = Number(r.units) / 90;
+        if (velocity <= 0) continue;
+        const priceyFloor = Number(r.units) / 90 < 0.2 ? 2 : 6;
+        await catalog.updateProduct(staff.manager, r.id, {
+          version: Number(r.version),
+          reorderPoint: Math.max(3, Math.ceil(velocity * 14)),
+          reorderQty: Math.max(priceyFloor, Math.ceil(velocity * 30)),
+        });
+      }
+    });
 
     // ---------------------------------------------------------------- is the picture consistent?
 
