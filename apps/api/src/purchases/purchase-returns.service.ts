@@ -9,7 +9,7 @@ import {
 } from '../accounting/ledger.js';
 import { recordAudit } from '../common/audit.js';
 import type { Principal } from '../common/auth.js';
-import { businessDate } from '../common/time.js';
+import { businessDate, now } from '../common/time.js';
 import { DB, type Database } from '../db/db.module.js';
 import {
   outboxEvents,
@@ -210,7 +210,7 @@ export class PurchaseReturnsService {
           paidMinor: paid,
           paymentStatus: paymentStatusOf(purchase.status, received, paid),
           version: sql`${purchases.version} + 1`,
-          updatedAt: sql`now()`,
+          updatedAt: now(),
         })
         .where(eq(purchases.id, purchaseId));
 

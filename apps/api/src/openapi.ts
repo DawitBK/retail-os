@@ -7,8 +7,10 @@ import {
 } from '@retail/kit';
 import { z } from 'zod';
 import * as acc from './accounting/accounting.contract.js';
+import * as ana from './analytics/analytics.contract.js';
 import * as auth from './auth/auth.contract.js';
 import * as cat from './catalog/catalog.contract.js';
+import * as imp from './imports/import.contract.js';
 import { Public } from './common/auth.js';
 import * as ops from './operations/operations.contract.js';
 import * as par from './parties/parties.contract.js';
@@ -914,6 +916,129 @@ export function openApiDocument(): Record<string, unknown> {
         'Today and month to date, stock, cash, 30-day series and top products, from the ledger',
       tag: 'insight',
       ok: ok(ops.dashboardSchema),
+    },
+    // analytics, forecasting and import
+    {
+      access: 'bookkeepers',
+      method: 'get',
+      path: '/analytics/products',
+      id: 'productHealth',
+      summary: 'Every active product with its sales pace, days of stock, margin and status',
+      tag: 'analytics',
+      query: o(ana.productHealthQuerySchema),
+      ok: ok(ana.productHealthPageSchema),
+    },
+    {
+      access: 'bookkeepers',
+      method: 'get',
+      path: '/analytics/products/{id}',
+      id: 'productAnalytics',
+      summary: 'Pace, margin, return on stock and a 30-day sales series for one product',
+      tag: 'analytics',
+      params: idParams,
+      ok: ok(ana.productAnalyticsSchema),
+    },
+    {
+      access: 'bookkeepers',
+      method: 'get',
+      path: '/analytics/inventory',
+      id: 'inventoryAnalytics',
+      summary:
+        'Turnover, days of inventory, return on stock, sell-through, stock ageing and dead stock',
+      tag: 'analytics',
+      query: o(ana.windowQuerySchema),
+      ok: ok(ana.inventoryAnalyticsSchema),
+    },
+    {
+      access: 'bookkeepers',
+      method: 'get',
+      path: '/analytics/profitability',
+      id: 'profitability',
+      summary: 'Profit by category, sub-category, brand or product',
+      tag: 'analytics',
+      query: o(ana.profitabilityQuerySchema),
+      ok: ok(ana.profitabilitySchema),
+    },
+    {
+      access: 'bookkeepers',
+      method: 'get',
+      path: '/analytics/cashflow',
+      id: 'cashflowAnalytics',
+      summary: 'Weekly cash in and out, with what is owed to suppliers and by customers, by age',
+      tag: 'analytics',
+      query: o(ana.cashflowQuerySchema),
+      ok: ok(ana.cashflowAnalyticsSchema),
+    },
+    {
+      access: 'bookkeepers',
+      method: 'get',
+      path: '/analytics/trajectory',
+      id: 'trajectory',
+      summary: 'Month-by-month revenue, margin, expenses, profit, cash and stock value',
+      tag: 'analytics',
+      query: o(ana.trajectoryQuerySchema),
+      ok: ok(ana.trajectorySchema),
+    },
+    {
+      access: 'bookkeepers',
+      method: 'get',
+      path: '/accounting/cash-flow',
+      id: 'cashFlowStatement',
+      summary: 'Cash flow statement, direct method, for a period',
+      tag: 'accounting',
+      query: z.object({ from: z.iso.date(), to: z.iso.date() }),
+      ok: ok(ana.cashFlowStatementSchema),
+    },
+    {
+      access: 'managers',
+      method: 'get',
+      path: '/forecasting/reorder',
+      id: 'forecastReorder',
+      summary: 'Products that will run out soon, soonest first',
+      tag: 'forecasting',
+      query: o(ana.forecastQuerySchema),
+      ok: ok(ana.reorderForecastSchema),
+    },
+    {
+      access: 'managers',
+      method: 'get',
+      path: '/forecasting/dead-stock',
+      id: 'forecastDeadStock',
+      summary: 'Stock that is not selling, by the money frozen in it',
+      tag: 'forecasting',
+      query: o(ana.forecastQuerySchema),
+      ok: ok(ana.deadStockForecastSchema),
+    },
+    {
+      access: 'managers',
+      method: 'get',
+      path: '/forecasting/sales',
+      id: 'forecastSales',
+      summary: 'Expected sales of the best sellers over the next 30 days',
+      tag: 'forecasting',
+      query: o(ana.forecastQuerySchema),
+      ok: ok(ana.salesForecastSchema),
+    },
+    {
+      access: 'managers',
+      method: 'get',
+      path: '/forecasting/suggestions',
+      id: 'forecastSuggestions',
+      summary: 'Purchase orders worth raising, grouped by supplier',
+      tag: 'forecasting',
+      query: o(ana.forecastQuerySchema),
+      ok: ok(ana.suggestionsSchema),
+    },
+    {
+      access: 'owner',
+      method: 'post',
+      path: '/import/inventory',
+      id: 'importInventory',
+      summary:
+        'Import the catalogue and opening stock from a CSV file (all rows or none; dryRun only checks)',
+      tag: 'import',
+      body: imp.importInventorySchema,
+      ok: ok(imp.importReportSchema),
     },
   ];
   for (const s of specs) registry.add(route(s));

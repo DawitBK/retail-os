@@ -20,7 +20,10 @@ export function roleFromIdp(roles: readonly string[]): Role | undefined {
 }
 
 /** A first and last name for a new account from what the provider sent. The first name is never empty. */
-export function namesFrom(access: SsoAccess, email: string): { firstName: string; lastName: string } {
+export function namesFrom(
+  access: SsoAccess,
+  email: string,
+): { firstName: string; lastName: string } {
   const first = access.firstName?.trim() ?? '';
   const last = access.lastName?.trim() ?? '';
   return { firstName: first || email.split('@')[0] || email, lastName: last };

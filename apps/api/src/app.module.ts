@@ -2,10 +2,12 @@ import { Module, type DynamicModule } from '@nestjs/common';
 import { HealthModule } from '@retail/kit';
 import type pg from 'pg';
 import { AccountingModule } from './accounting/accounting.module.js';
+import { AnalyticsModule } from './analytics/analytics.module.js';
 import { AuthModule } from './auth/auth.module.js';
 import { CatalogModule } from './catalog/catalog.module.js';
 import type { AuthConfig } from './common/auth.js';
 import { DbModule, POOL } from './db/db.module.js';
+import { ImportModule } from './imports/import.module.js';
 import { OpenApiController } from './openapi.js';
 import { OperationsModule } from './operations/operations.module.js';
 import { PartiesModule } from './parties/parties.module.js';
@@ -34,6 +36,8 @@ export class AppModule {
         PurchasesModule,
         AccountingModule,
         OperationsModule,
+        AnalyticsModule,
+        ImportModule,
       ],
       controllers: [OpenApiController],
     };

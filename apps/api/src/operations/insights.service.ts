@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 import { ACCOUNT } from '../accounting/ledger.js';
-import { businessDate, getBusinessTimezone } from '../common/time.js';
+import { businessDate, getBusinessTimezone, now } from '../common/time.js';
 import { DB, type Database } from '../db/db.module.js';
 import {
   accounts,
@@ -51,7 +51,7 @@ export class InsightsService {
       .from(products)
       .where(and(isNull(products.deletedAt), eq(products.status, 'ACTIVE')))
       .orderBy(asc(products.name), asc(products.id));
-    const cutoff = new Date(Date.now() - DEAD_STOCK_DAYS * 24 * 60 * 60 * 1000);
+    const cutoff = new Date(now().getTime() - DEAD_STOCK_DAYS * 24 * 60 * 60 * 1000);
     const alerts: Alert[] = [];
     for (const p of live) {
       if (p.currentStock === 0) {
@@ -174,7 +174,7 @@ export class InsightsService {
       .select()
       .from(products)
       .where(and(isNull(products.deletedAt), eq(products.status, 'ACTIVE')));
-    const cutoff = new Date(Date.now() - DEAD_STOCK_DAYS * 24 * 60 * 60 * 1000);
+    const cutoff = new Date(now().getTime() - DEAD_STOCK_DAYS * 24 * 60 * 60 * 1000);
     const dead = stock.filter((p) => p.currentStock > 0 && (p.lastSoldAt ?? p.createdAt) < cutoff);
     const inventory = {
       totalValueMinor: stock.reduce((s, p) => s + p.stockValueMinor, 0),

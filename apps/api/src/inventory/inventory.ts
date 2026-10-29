@@ -2,6 +2,7 @@ import { ProblemException } from '@retail/kit';
 import { eq, sql } from 'drizzle-orm';
 import type { Tx } from '../db/db.module.js';
 import { inventoryMovements, products, type MovementType } from '../db/schema.js';
+import { now } from '../common/time.js';
 
 /** Which movement types put stock in. Everything else takes stock out. */
 const INCOMING: ReadonlySet<MovementType> = new Set([
@@ -110,9 +111,9 @@ export async function applyMovement(tx: Tx, input: MovementInput): Promise<Movem
     .set({
       currentStock: stockAfter,
       stockValueMinor: valueAfter,
-      ...(RESTOCKING.has(input.type) ? { lastRestockedAt: sql`now()` } : {}),
-      ...(input.type === 'SALE' ? { lastSoldAt: sql`now()` } : {}),
-      updatedAt: sql`now()`,
+      ...(RESTOCKING.has(input.type) ? { lastRestockedAt: now() } : {}),
+      ...(input.type === 'SALE' ? { lastSoldAt: now() } : {}),
+      updatedAt: now(),
     })
     .where(eq(products.id, input.productId));
   await tx.insert(inventoryMovements).values({

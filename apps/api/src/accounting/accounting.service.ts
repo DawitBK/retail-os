@@ -4,7 +4,7 @@ import type { Pagination } from '@retail/kit';
 import { and, asc, count, desc, eq, gte, inArray, isNull, lte, sql, type SQL } from 'drizzle-orm';
 import { recordAudit } from '../common/audit.js';
 import type { Principal } from '../common/auth.js';
-import { businessDate } from '../common/time.js';
+import { businessDate, now } from '../common/time.js';
 import { DB, type Database } from '../db/db.module.js';
 import {
   accounts,
@@ -492,7 +492,7 @@ export class AccountingService {
       }
       const [row] = await tx
         .update(expenses)
-        .set({ voidedAt: sql`now()`, voidedBy: actor.userId, voidReason: input.reason })
+        .set({ voidedAt: now(), voidedBy: actor.userId, voidReason: input.reason })
         .where(eq(expenses.id, id))
         .returning();
       const after = toExpenseDto(row!);

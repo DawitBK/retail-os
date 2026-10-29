@@ -4,7 +4,7 @@ import { and, asc, count, desc, eq, inArray, isNull, sql, type SQL } from 'drizz
 import { ACCOUNT, postJournalEntry, settlementAccount } from '../accounting/ledger.js';
 import { recordAudit } from '../common/audit.js';
 import type { Principal } from '../common/auth.js';
-import { businessDate } from '../common/time.js';
+import { businessDate, now } from '../common/time.js';
 import { DB, type Database, type Tx } from '../db/db.module.js';
 import {
   outboxEvents,
@@ -237,7 +237,7 @@ export class PurchasesService {
           receivedDate: businessDate(),
           paymentStatus: paymentStatusOf(status, received, purchase.paidMinor),
           version: sql`${purchases.version} + 1`,
-          updatedAt: sql`now()`,
+          updatedAt: now(),
         })
         .where(eq(purchases.id, id));
       const after = await this.read(tx, id);
@@ -267,7 +267,7 @@ export class PurchasesService {
       }
       await tx
         .update(purchases)
-        .set({ status: 'CANCELLED', version: sql`${purchases.version} + 1`, updatedAt: sql`now()` })
+        .set({ status: 'CANCELLED', version: sql`${purchases.version} + 1`, updatedAt: now() })
         .where(eq(purchases.id, id));
       const after = await this.read(tx, id);
       await recordAudit(tx, {
@@ -326,7 +326,7 @@ export class PurchasesService {
           paidMinor: paid,
           paymentStatus: paymentStatusOf(purchase.status, purchase.receivedValueMinor, paid),
           version: sql`${purchases.version} + 1`,
-          updatedAt: sql`now()`,
+          updatedAt: now(),
         })
         .where(eq(purchases.id, id));
       const dto: SupplierPaymentDto = {

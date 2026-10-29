@@ -13,7 +13,7 @@ import {
 import { recordAudit } from '../common/audit.js';
 import type { Principal } from '../common/auth.js';
 import { runIdempotent, type Outcome } from '../common/idempotency.js';
-import { businessDate, getBusinessTimezone } from '../common/time.js';
+import { businessDate, getBusinessTimezone, now } from '../common/time.js';
 import { DB, type Database, type Tx } from '../db/db.module.js';
 import {
   categories,
@@ -418,7 +418,7 @@ export class SalesService {
         .update(sales)
         .set({
           status: 'VOIDED',
-          voidedAt: sql`now()`,
+          voidedAt: now(),
           voidedBy: actor.userId,
           voidReason: input.reason,
           version: sql`${sales.version} + 1`,

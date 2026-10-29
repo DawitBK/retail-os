@@ -2,6 +2,7 @@ import { conflict, ProblemException, unprocessable } from '@retail/kit';
 import { eq, inArray, sql } from 'drizzle-orm';
 import type { Tx } from '../db/db.module.js';
 import { accounts, journalEntries, journalLines, periodCloses } from '../db/schema.js';
+import { now } from '../common/time.js';
 
 /** The chart-of-accounts codes the application posts to. The rest of the chart is data. */
 export const ACCOUNT = {
@@ -196,7 +197,7 @@ export async function voidJournalEntry(
   });
   await tx
     .update(journalEntries)
-    .set({ status: 'VOIDED', voidedAt: sql`now()`, voidedBy: by.userId })
+    .set({ status: 'VOIDED', voidedAt: now(), voidedBy: by.userId })
     .where(eq(journalEntries.id, entryId));
   return reversal;
 }

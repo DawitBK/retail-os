@@ -107,9 +107,9 @@ describe('publicAddress', () => {
   });
 
   it('works when the internal address carries a path', () => {
-    expect(publicAddress('http://gateway:8080/sso/authorize', ISSUER, 'http://gateway:8080/idp')).toBe(
-      'https://portal.example.com/sso/authorize',
-    );
+    expect(
+      publicAddress('http://gateway:8080/sso/authorize', ISSUER, 'http://gateway:8080/idp'),
+    ).toBe('https://portal.example.com/sso/authorize');
   });
 
   it('returns every address unchanged when no internal address is set', () => {

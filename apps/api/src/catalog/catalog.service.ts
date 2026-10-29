@@ -35,6 +35,7 @@ import type {
   UpdateProduct,
   UpdateSubCategory,
 } from './catalog.contract.js';
+import { now } from '../common/time.js';
 
 const PRODUCT_SORT = {
   name: sql`lower(${products.name})`,
@@ -94,7 +95,7 @@ export const toProductDto = (r: ProductRow): ProductDto => ({
   updatedAt: r.updatedAt.toISOString(),
 });
 
-const touch = () => ({ version: sql`version + 1`, updatedAt: sql`now()` });
+const touch = () => ({ version: sql`version + 1`, updatedAt: now() });
 
 @Injectable()
 export class CatalogService {
@@ -183,7 +184,7 @@ export class CatalogService {
       }
       await tx
         .update(categories)
-        .set({ deletedAt: sql`now()`, ...touch() })
+        .set({ deletedAt: now(), ...touch() })
         .where(eq(categories.id, id));
       await recordAudit(
         tx,
@@ -283,7 +284,7 @@ export class CatalogService {
       }
       await tx
         .update(subCategories)
-        .set({ deletedAt: sql`now()`, ...touch() })
+        .set({ deletedAt: now(), ...touch() })
         .where(eq(subCategories.id, id));
       await recordAudit(
         tx,
@@ -369,7 +370,7 @@ export class CatalogService {
       }
       await tx
         .update(brands)
-        .set({ deletedAt: sql`now()`, ...touch() })
+        .set({ deletedAt: now(), ...touch() })
         .where(eq(brands.id, id));
       await recordAudit(tx, audit(actor, 'brand.deleted', 'brand', id, toBrandDto(current)));
     });
@@ -505,7 +506,7 @@ export class CatalogService {
           `${current.currentStock} on hand`,
         );
       }
-      const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const since = new Date(now().getTime() - 30 * 24 * 60 * 60 * 1000);
       const [{ recent } = { recent: 0 }] = await tx
         .select({ recent: count() })
         .from(inventoryMovements)
@@ -519,7 +520,7 @@ export class CatalogService {
       }
       await tx
         .update(products)
-        .set({ deletedAt: sql`now()`, ...touch() })
+        .set({ deletedAt: now(), ...touch() })
         .where(eq(products.id, id));
       await recordAudit(tx, audit(actor, 'product.deleted', 'product', id, toProductDto(current)));
     });

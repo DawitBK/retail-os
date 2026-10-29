@@ -26,6 +26,7 @@ import type {
   UpdateStaff,
   UserDto,
 } from './auth.contract.js';
+import { now } from '../common/time.js';
 
 export const toUserDto = (row: UserRow): UserDto => ({
   id: row.id,
@@ -109,10 +110,16 @@ export class AuthService {
    * missing, and its role is set to the provider's at EVERY sign-in, so a change made in the provider's console is in force at the next one.
    * A person switched off here is still refused: the provider does not override that.
    */
-  async loginWithVerifiedEmail(email: string, subject: string, access?: SsoAccess): Promise<TokenPair> {
+  async loginWithVerifiedEmail(
+    email: string,
+    subject: string,
+    access?: SsoAccess,
+  ): Promise<TokenPair> {
     const role = access ? roleFromIdp(access.roles) : undefined;
     if (access && !role) {
-      throw forbidden('You have not been given access to Retail OS. Ask an administrator to give you a role in the identity provider.');
+      throw forbidden(
+        'You have not been given access to Retail OS. Ask an administrator to give you a role in the identity provider.',
+      );
     }
     const find = () =>
       this.db
@@ -169,7 +176,7 @@ export class AuthService {
       user = await this.db.transaction(async (tx) => {
         const [row] = await tx
           .update(users)
-          .set({ role, version: sql`${users.version} + 1`, updatedAt: sql`now()` })
+          .set({ role, version: sql`${users.version} + 1`, updatedAt: now() })
           .where(eq(users.id, current.id))
           .returning();
         await recordAudit(tx, {
@@ -193,7 +200,7 @@ export class AuthService {
   async revokeSessionsBySsoSubject(subject: string): Promise<number> {
     const revoked = await this.db
       .update(refreshTokens)
-      .set({ revokedAt: sql`now()` })
+      .set({ revokedAt: now() })
       .where(
         and(
           isNull(refreshTokens.revokedAt),
@@ -218,7 +225,7 @@ export class AuthService {
         // revocation has to commit, so the 401 is raised after the transaction ends.
         await tx
           .update(refreshTokens)
-          .set({ revokedAt: sql`now()` })
+          .set({ revokedAt: now() })
           .where(and(eq(refreshTokens.familyId, token.familyId), isNull(refreshTokens.revokedAt)));
         return 'reuse';
       }
@@ -230,7 +237,7 @@ export class AuthService {
       if (!user || !user.active) throw unauthorized('Refresh token is not valid');
       await tx
         .update(refreshTokens)
-        .set({ revokedAt: sql`now()` })
+        .set({ revokedAt: now() })
         .where(eq(refreshTokens.id, token.id));
       return this.issue(user, token.familyId, tx);
     });
@@ -241,7 +248,7 @@ export class AuthService {
   async logout(presented: string): Promise<void> {
     await this.db
       .update(refreshTokens)
-      .set({ revokedAt: sql`now()` })
+      .set({ revokedAt: now() })
       .where(
         and(
           isNull(refreshTokens.revokedAt),
@@ -273,7 +280,7 @@ export class AuthService {
     await this.db.transaction(async (tx) => {
       await tx
         .update(users)
-        .set({ passwordHash, version: sql`${users.version} + 1`, updatedAt: sql`now()` })
+        .set({ passwordHash, version: sql`${users.version} + 1`, updatedAt: now() })
         .where(eq(users.id, row.id));
       await this.revokeAll(tx, row.id);
       await recordAudit(tx, {
@@ -379,7 +386,7 @@ export class AuthService {
           ...(input.active !== undefined ? { active: input.active } : {}),
           ...(passwordHash ? { passwordHash } : {}),
           version: sql`${users.version} + 1`,
-          updatedAt: sql`now()`,
+          updatedAt: now(),
         })
         .where(eq(users.id, id))
         .returning();
@@ -401,7 +408,7 @@ export class AuthService {
   private async revokeAll(tx: Tx, userId: string): Promise<void> {
     await tx
       .update(refreshTokens)
-      .set({ revokedAt: sql`now()` })
+      .set({ revokedAt: now() })
       .where(and(eq(refreshTokens.userId, userId), isNull(refreshTokens.revokedAt)));
   }
 

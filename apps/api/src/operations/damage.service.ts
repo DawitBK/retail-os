@@ -4,7 +4,7 @@ import { and, asc, count, desc, eq, isNull, sql, type SQL } from 'drizzle-orm';
 import { ACCOUNT, postJournalEntry } from '../accounting/ledger.js';
 import { recordAudit } from '../common/audit.js';
 import type { Principal } from '../common/auth.js';
-import { businessDate } from '../common/time.js';
+import { businessDate, now } from '../common/time.js';
 import { DB, type Database, type Tx } from '../db/db.module.js';
 import { damageRecords, outboxEvents, products, type DamageRow } from '../db/schema.js';
 import { applyMovement } from '../inventory/inventory.js';
@@ -138,7 +138,7 @@ export class DamageService {
         .set({
           status: 'APPROVED',
           decidedBy: actor.userId,
-          decidedAt: sql`now()`,
+          decidedAt: now(),
           decisionNote: input.note ?? null,
           lossMinor: moved.costMinor,
           journalEntryId: entryId,
@@ -167,7 +167,7 @@ export class DamageService {
         .set({
           status: 'REJECTED',
           decidedBy: actor.userId,
-          decidedAt: sql`now()`,
+          decidedAt: now(),
           decisionNote: input.note,
           version: sql`${damageRecords.version} + 1`,
         })

@@ -23,6 +23,7 @@ import type {
   UpdateCustomer,
   UpdateSupplier,
 } from './parties.contract.js';
+import { now } from '../common/time.js';
 
 const toCustomerDto = (r: CustomerRow, outstandingMinor: number): CustomerDto => ({
   id: r.id,
@@ -55,7 +56,7 @@ const toSupplierDto = (r: SupplierRow, payableMinor: number): SupplierDto => ({
   createdAt: r.createdAt.toISOString(),
 });
 
-const touch = () => ({ version: sql`version + 1`, updatedAt: sql`now()` });
+const touch = () => ({ version: sql`version + 1`, updatedAt: now() });
 
 /** What a customer owes: the unpaid part of their completed credit sales. Derived, never stored. */
 export async function outstandingOf(
@@ -216,7 +217,7 @@ export class PartiesService {
       }
       await tx
         .update(customers)
-        .set({ deletedAt: sql`now()`, ...touch() })
+        .set({ deletedAt: now(), ...touch() })
         .where(eq(customers.id, id));
       await recordAudit(tx, {
         actor: actor.userId,
@@ -361,7 +362,7 @@ export class PartiesService {
       }
       await tx
         .update(suppliers)
-        .set({ deletedAt: sql`now()`, ...touch() })
+        .set({ deletedAt: now(), ...touch() })
         .where(eq(suppliers.id, id));
       await recordAudit(tx, {
         actor: actor.userId,

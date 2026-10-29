@@ -20,13 +20,20 @@ describe('roleFromIdp', () => {
 });
 
 describe('namesFrom', () => {
-  it('uses the provider\'s names, trimmed', () => {
-    expect(namesFrom({ roles: [], firstName: ' Abebe ', lastName: 'Kebede ' }, 'a@b.test')).toEqual({ firstName: 'Abebe', lastName: 'Kebede' });
+  it("uses the provider's names, trimmed", () => {
+    expect(namesFrom({ roles: [], firstName: ' Abebe ', lastName: 'Kebede ' }, 'a@b.test')).toEqual(
+      { firstName: 'Abebe', lastName: 'Kebede' },
+    );
   });
 
   it('never leaves the first name empty: the address before the @ stands in, and the last name may be empty', () => {
-    expect(namesFrom({ roles: [] }, 'abebe.k@shop.test')).toEqual({ firstName: 'abebe.k', lastName: '' });
-    expect(namesFrom({ roles: [], firstName: '  ', lastName: 'Kebede' }, 'abebe@shop.test')).toEqual({ firstName: 'abebe', lastName: 'Kebede' });
+    expect(namesFrom({ roles: [] }, 'abebe.k@shop.test')).toEqual({
+      firstName: 'abebe.k',
+      lastName: '',
+    });
+    expect(
+      namesFrom({ roles: [], firstName: '  ', lastName: 'Kebede' }, 'abebe@shop.test'),
+    ).toEqual({ firstName: 'abebe', lastName: 'Kebede' });
   });
 });
 

@@ -15,6 +15,7 @@ import {
   uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
+import { now } from '../common/time.js';
 
 /** owner: everything. manager: operations. accountant: books and reports. cashier: the till. */
 export const ROLES = ['owner', 'manager', 'accountant', 'cashier'] as const;
@@ -62,8 +63,16 @@ const id = () =>
   uuid('id')
     .primaryKey()
     .default(sql`uuidv7()`);
-const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
-const updatedAt = () => timestamp('updated_at', { withTimezone: true }).notNull().defaultNow();
+const createdAt = () =>
+  timestamp('created_at', { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$defaultFn(() => now());
+const updatedAt = () =>
+  timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$defaultFn(() => now());
 const deletedAt = () => timestamp('deleted_at', { withTimezone: true });
 /** Optimistic concurrency token: bumped by every update. */
 const version = () => integer('version').notNull().default(1);
@@ -437,7 +446,10 @@ export const sales = pgTable(
     id: id(),
     number: text('number').notNull(),
     customerId: uuid('customer_id').references(() => customers.id),
-    saleDate: timestamp('sale_date', { withTimezone: true }).notNull().defaultNow(),
+    saleDate: timestamp('sale_date', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$defaultFn(() => now()),
     status: text('status', { enum: SALE_STATUSES }).notNull().default('COMPLETED'),
     subtotalMinor: money('subtotal_minor').notNull(),
     discountMinor: money('discount_minor').notNull().default(0),
@@ -526,7 +538,10 @@ export const settlements = pgTable(
     purchaseId: uuid('purchase_id'),
     amountMinor: money('amount_minor').notNull(),
     method: text('method', { enum: SETTLEMENT_METHODS }).notNull(),
-    paidAt: timestamp('paid_at', { withTimezone: true }).notNull().defaultNow(),
+    paidAt: timestamp('paid_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$defaultFn(() => now()),
     journalEntryId: uuid('journal_entry_id').references(() => journalEntries.id),
     recordedBy: uuid('recorded_by')
       .notNull()
@@ -802,7 +817,10 @@ export const periodCloses = pgTable(
     closedBy: uuid('closed_by')
       .notNull()
       .references(() => users.id),
-    closedAt: timestamp('closed_at', { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp('closed_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$defaultFn(() => now()),
   },
   (t) => [
     check('period_closes_year_plausible', sql`${t.fiscalYear} between 1990 and 2200`),

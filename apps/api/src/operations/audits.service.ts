@@ -4,7 +4,7 @@ import { and, asc, count, desc, eq, inArray, isNull, sql, type SQL } from 'drizz
 import { ACCOUNT, postJournalEntry, type JournalLineInput } from '../accounting/ledger.js';
 import { recordAudit } from '../common/audit.js';
 import type { Principal } from '../common/auth.js';
-import { businessDate } from '../common/time.js';
+import { businessDate, now } from '../common/time.js';
 import { DB, type Database, type Tx } from '../db/db.module.js';
 import {
   outboxEvents,
@@ -95,7 +95,7 @@ export class AuditsService {
             systemQty: product!.stock,
             physicalQty: c.physicalQty,
             countedBy: actor.userId,
-            countedAt: sql`now()`,
+            countedAt: now(),
           })
           .where(eq(stockAuditItems.id, item.id));
       }
@@ -124,7 +124,7 @@ export class AuditsService {
         .update(stockAudits)
         .set({
           status: 'PENDING_APPROVAL',
-          submittedAt: sql`now()`,
+          submittedAt: now(),
           version: sql`${stockAudits.version} + 1`,
         })
         .where(eq(stockAudits.id, id));
@@ -228,7 +228,7 @@ export class AuditsService {
         .set({
           status: 'APPROVED',
           approvedBy: actor.userId,
-          approvedAt: sql`now()`,
+          approvedAt: now(),
           version: sql`${stockAudits.version} + 1`,
         })
         .where(eq(stockAudits.id, id));
