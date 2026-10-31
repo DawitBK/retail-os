@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { forwardedFor } from '@/lib/client-ip';
 import { ACCESS_COOKIE, API_URL } from '@/lib/session';
+import { fetchWithRetry } from '@/lib/resilient-fetch';
 
 /**
  * The only door from the browser to the API. It adds the bearer token from the httpOnly cookie, so
@@ -21,12 +22,15 @@ async function forward(request: NextRequest, ctx: { params: Promise<{ path: stri
   if (idem) headers['idempotency-key'] = idem;
 
   const hasBody = request.method !== 'GET' && request.method !== 'DELETE';
-  const upstream = await fetch(`${API_URL}/api/v1/${path.join('/')}${request.nextUrl.search}`, {
-    method: request.method,
-    headers,
-    body: hasBody ? await request.text() : undefined,
-    cache: 'no-store',
-  });
+  const upstream = await fetchWithRetry(
+    `${API_URL}/api/v1/${path.join('/')}${request.nextUrl.search}`,
+    {
+      method: request.method,
+      headers,
+      body: hasBody ? await request.text() : undefined,
+      cache: 'no-store',
+    },
+  );
 
   const body = upstream.status === 204 ? null : await upstream.text();
   return new NextResponse(body, {
