@@ -1,8 +1,9 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
+import { BarChart } from '@/components/charts';
 import { Empty, PageHeader, Stat, Table } from '@/components/ui';
 import { formatDays, formatRate } from '@/lib/analytics';
-import { formatMoney, pct } from '@/lib/format';
+import { formatMoney, formatMoneyCompact, pct } from '@/lib/format';
 import { MANAGERS, can, homeFor } from '@/lib/roles';
 import { api, apiSafe } from '@/lib/server-api';
 import type { Dashboard, ReorderForecast, User } from '@/lib/types';
@@ -17,7 +18,6 @@ export default async function DashboardPage() {
     // Only the people who buy see this; a refusal just leaves the table out.
     can(me.role, MANAGERS) ? apiSafe<ReorderForecast>('/forecasting/reorder?limit=8') : null,
   ]);
-  const max = Math.max(1, ...d.revenue30Days.map((x) => x.revenueMinor));
 
   return (
     <>
@@ -61,25 +61,11 @@ export default async function DashboardPage() {
 
       <section aria-label="Sales, last 30 days" className="card mt-5 p-4">
         <h2 className="mb-3 text-sm font-semibold">Sales, last 30 days</h2>
-        <div
-          className="flex h-36 items-end gap-1"
-          role="img"
-          aria-label="Daily sales for the last 30 days"
-        >
-          {d.revenue30Days.map((x) => (
-            <div key={x.date} className="group relative flex-1">
-              <div
-                className="rounded-t bg-brand/70 group-hover:bg-brand"
-                style={{
-                  height: `${Math.max((x.revenueMinor / max) * 100, x.revenueMinor > 0 ? 3 : 0.5)}%`,
-                }}
-              />
-              <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-1 hidden -translate-x-1/2 rounded bg-ink px-2 py-1 text-xs whitespace-nowrap text-white group-hover:block">
-                {x.date}: {formatMoney(x.revenueMinor)}
-              </div>
-            </div>
-          ))}
-        </div>
+        <BarChart
+          ariaLabel="Daily sales for the last 30 days"
+          data={d.revenue30Days.map((x) => ({ label: x.date, value: x.revenueMinor }))}
+          format={formatMoneyCompact}
+        />
       </section>
 
       <div className="mt-5 grid gap-5 lg:grid-cols-2">
