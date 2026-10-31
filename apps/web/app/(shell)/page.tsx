@@ -68,8 +68,8 @@ export default async function DashboardPage() {
         />
       </section>
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">
-        <section aria-label="Needs attention">
+      <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-2">
+        <section aria-label="Needs attention" className="min-w-0">
           <h2 className="mb-2 text-sm font-semibold">Needs attention</h2>
           <div className="card divide-y divide-line">
             <AttentionRow href="/alerts" label="Out of stock" n={d.inventory.outOfStock} />
@@ -90,7 +90,7 @@ export default async function DashboardPage() {
             />
           </div>
         </section>
-        <section aria-label="Top products">
+        <section aria-label="Top products" className="min-w-0">
           <h2 className="mb-2 text-sm font-semibold">Top products, this month</h2>
           {d.topProducts.length === 0 ? (
             <Empty>No sales yet this month.</Empty>
