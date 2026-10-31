@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { Badge, Empty, PageHeader, Pager, Table, num, statusTone } from '@/components/ui';
 import { formatDateTime, label } from '@/lib/format';
 import { MANAGERS, can } from '@/lib/roles';
-import { api, qs } from '@/lib/server-api';
+import { api, qs, allPages } from '@/lib/server-api';
 import type { Page, Product, StockAudit, User } from '@/lib/types';
 import { StartAudit } from './start-audit';
 
@@ -19,9 +19,7 @@ export default async function AuditsPage({
   const data = await api<Page<StockAudit>>(
     `/stock-audits${qs({ status: sp.status, offset: num(sp.offset), limit: 25 })}`,
   );
-  const products = manager
-    ? await api<Page<Product>>('/products?limit=100&status=ACTIVE&sort=name')
-    : null;
+  const products = manager ? await allPages<Product>('/products?status=ACTIVE&sort=name') : null;
 
   return (
     <>
@@ -30,9 +28,7 @@ export default async function AuditsPage({
         subtitle="Count what is on the shelf; a manager approves the differences into the books."
         actions={
           products ? (
-            <StartAudit
-              products={products.items.map((p) => ({ id: p.id, name: p.name, sku: p.sku }))}
-            />
+            <StartAudit products={products.map((p) => ({ id: p.id, name: p.name, sku: p.sku }))} />
           ) : null
         }
       />

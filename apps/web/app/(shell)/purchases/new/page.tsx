@@ -1,18 +1,36 @@
 import { redirect } from 'next/navigation';
 import { PageHeader } from '@/components/ui';
 import { MANAGERS, can } from '@/lib/roles';
-import { api } from '@/lib/server-api';
+import { allPages, api } from '@/lib/server-api';
 import type { Page, Product, Supplier, User } from '@/lib/types';
 import { PurchaseForm } from './purchase-form';
 
 export const metadata = { title: 'New purchase order' };
 
-export default async function NewPurchasePage() {
+/** `?supplierId=...&lines=productId:qty:unitCostMinor,...` fills the form, as the purchase suggestions do. */
+function startingLines(raw: string | undefined) {
+  return (raw ?? '')
+    .split(',')
+    .map((part) => part.split(':'))
+    .flatMap(([productId, qty, cost]) =>
+      productId && /^\d+$/.test(qty ?? '')
+        ? [{ productId, qty: qty!, costMinor: Number(cost) || 0 }]
+        : [],
+    )
+    .slice(0, 200);
+}
+
+export default async function NewPurchasePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ supplierId?: string; lines?: string }>;
+}) {
+  const sp = await searchParams;
   const me = await api<User>('/me');
   if (!can(me.role, MANAGERS)) redirect('/purchases');
   const [suppliers, products] = await Promise.all([
     api<Page<Supplier>>('/suppliers?limit=100'),
-    api<Page<Product>>('/products?limit=100&status=ACTIVE&sort=name'),
+    allPages<Product>('/products?status=ACTIVE&sort=name'),
   ]);
   return (
     <>
@@ -22,12 +40,14 @@ export default async function NewPurchasePage() {
       />
       <PurchaseForm
         suppliers={suppliers.items.map((s) => ({ id: s.id, name: s.name }))}
-        products={products.items.map((p) => ({
+        products={products.map((p) => ({
           id: p.id,
           name: p.name,
           sku: p.sku,
           wacMinor: p.wacMinor,
         }))}
+        initialSupplierId={sp.supplierId}
+        initialLines={startingLines(sp.lines)}
       />
     </>
   );

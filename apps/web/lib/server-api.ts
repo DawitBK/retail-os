@@ -78,3 +78,19 @@ export function qs(params: Record<string, string | number | undefined | null>): 
   const s = sp.toString();
   return s ? `?${s}` : '';
 }
+
+/**
+ * Every row of a paged list. The API caps a page at 100, and a form that offers products must offer all of them,
+ * so this keeps asking until the reported total has been read.
+ */
+export async function allPages<T>(path: string): Promise<T[]> {
+  const items: T[] = [];
+  const joiner = path.includes('?') ? '&' : '?';
+  for (;;) {
+    const page = await api<{ items: T[]; page: { total: number } }>(
+      `${path}${joiner}limit=100&offset=${items.length}`,
+    );
+    items.push(...page.items);
+    if (page.items.length === 0 || items.length >= page.page.total) return items;
+  }
+}

@@ -19,12 +19,33 @@ interface Line {
   cost: string;
 }
 
-export function PurchaseForm({ suppliers, products }: { suppliers: Option[]; products: Option[] }) {
+export function PurchaseForm({
+  suppliers,
+  products,
+  initialSupplierId,
+  initialLines = [],
+}: {
+  suppliers: Option[];
+  products: Option[];
+  initialSupplierId?: string;
+  initialLines?: { productId: string; qty: string; costMinor: number }[];
+}) {
   const router = useRouter();
-  const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? '');
+  const [supplierId, setSupplierId] = useState(
+    suppliers.find((s) => s.id === initialSupplierId)?.id ?? suppliers[0]?.id ?? '',
+  );
   const [expected, setExpected] = useState('');
   const [notes, setNotes] = useState('');
-  const [lines, setLines] = useState<Line[]>([{ productId: '', qty: '1', cost: '' }]);
+  const known = initialLines.filter((l) => products.some((p) => p.id === l.productId));
+  const [lines, setLines] = useState<Line[]>(
+    known.length > 0
+      ? known.map((l) => ({
+          productId: l.productId,
+          qty: l.qty,
+          cost: l.costMinor > 0 ? toInput(l.costMinor) : '',
+        }))
+      : [{ productId: '', qty: '1', cost: '' }],
+  );
   const m = useMutation();
 
   const parsed = lines.map((l) => ({

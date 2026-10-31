@@ -60,4 +60,20 @@
   body {
     background: white;
   }
+  /* The sidebar is not printed, so the page must not keep the column it was given. */
+  .shell {
+    display: block !important;
+  }
+  .shell > main {
+    padding: 0 !important;
+  }
+  .card {
+    break-inside: avoid;
+  }
+  table {
+    break-inside: auto;
+  }
+  tr {
+    break-inside: avoid;
+  }
 }

@@ -189,7 +189,15 @@ export default async function ForecastingPage({ searchParams }: { searchParams: 
                           {formatMoney(s.totalMinor)}
                         </span>
                       </h3>
-                      <Link className="btn no-print" href="/purchases/new">
+                      <Link
+                        className="btn no-print"
+                        href={`/purchases/new?${new URLSearchParams({
+                          ...(s.supplierId ? { supplierId: s.supplierId } : {}),
+                          lines: s.lines
+                            .map((l) => `${l.productId}:${l.suggestedQty}:${l.unitCostMinor}`)
+                            .join(','),
+                        }).toString()}`}
+                      >
                         Create purchase order
                       </Link>
                     </div>

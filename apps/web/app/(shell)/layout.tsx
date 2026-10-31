@@ -12,7 +12,7 @@ export default async function ShellLayout({ children }: { children: ReactNode })
   const urgent = alerts ? alerts.critical + alerts.warning : 0;
 
   return (
-    <div className="min-h-screen md:grid md:grid-cols-[14rem_1fr]">
+    <div className="shell min-h-screen md:grid md:grid-cols-[14rem_1fr]">
       <aside className="no-print border-b border-line bg-white p-3 md:min-h-screen md:border-r md:border-b-0">
         <div className="mb-4 flex items-center justify-between px-2 md:block">
           <div className="text-base font-semibold tracking-tight">Retail OS</div>

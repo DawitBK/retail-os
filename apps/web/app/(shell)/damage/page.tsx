@@ -2,7 +2,7 @@ import { ActionButton, ReasonButton } from '@/components/form';
 import { Badge, Empty, PageHeader, Pager, Table, num, statusTone } from '@/components/ui';
 import { formatDateTime, formatMoney, label } from '@/lib/format';
 import { MANAGERS, can } from '@/lib/roles';
-import { api, qs } from '@/lib/server-api';
+import { allPages, api, qs } from '@/lib/server-api';
 import type { Damage, Page, Product, User } from '@/lib/types';
 import { ReportDamage } from './report-damage';
 
@@ -18,9 +18,9 @@ export default async function DamagePage({
   const manager = can(me.role, MANAGERS);
   const [data, products] = await Promise.all([
     api<Page<Damage>>(`/damage${qs({ status: sp.status, offset: num(sp.offset), limit: 25 })}`),
-    api<Page<Product>>('/products?limit=100&status=ACTIVE&sort=name'),
+    allPages<Product>('/products?status=ACTIVE&sort=name'),
   ]);
-  const name = (id: string) => products.items.find((p) => p.id === id)?.name ?? 'Product';
+  const name = (id: string) => products.find((p) => p.id === id)?.name ?? 'Product';
 
   return (
     <>
@@ -29,7 +29,7 @@ export default async function DamagePage({
         subtitle="Stock only leaves the books when someone other than the reporter approves."
         actions={
           <ReportDamage
-            products={products.items.map((p) => ({
+            products={products.map((p) => ({
               id: p.id,
               name: p.name,
               stock: p.currentStock,
