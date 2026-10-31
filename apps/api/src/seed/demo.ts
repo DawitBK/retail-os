@@ -227,6 +227,19 @@ export async function seedDemo(
   const firstDay = addDays(today, -(options.days - 1));
   let tick = 0;
   let base = 0;
+  /** Minutes since midnight, now, in the shop's time zone. */
+  const localMinutesNow = () => {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: tz,
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(new Date());
+    return (
+      Number(parts.find((p) => p.type === 'hour')!.value) * 60 +
+      Number(parts.find((p) => p.type === 'minute')!.value)
+    );
+  };
   const restoreClock = useClock(() => new Date(base + tick++));
   try {
     /** Stand at a time of day in the shop's time zone on a trading day. */
@@ -236,7 +249,21 @@ export async function seedDemo(
         .find((p) => p.type === 'timeZoneName')!
         .value.replace('GMT', '');
       // Time only moves forward: two things at the same minute keep the order they happened in.
-      const target = new Date(`${day}T${hhmm}:00${offset === '' ? 'Z' : offset}`).getTime();
+      let target = new Date(`${day}T${hhmm}:00${offset === '' ? 'Z' : offset}`).getTime();
+      // Today is only replayed up to the present: the working day (08:00 to 20:00) is squeezed into
+      // what has already passed, so nothing is ever dated in the future.
+      if (day === today) {
+        const [h, m] = hhmm.split(':').map(Number) as [number, number];
+        const minute = h * 60 + m;
+        const cap = Math.max(485, Math.min(1200, localMinutesNow() - 10));
+        if (minute >= 480 && cap < 1200) {
+          const squeezed = 480 + Math.round(((minute - 480) * (cap - 480)) / (1200 - 480));
+          const t = new Date(
+            `${day}T${String(Math.floor(squeezed / 60)).padStart(2, '0')}:${String(squeezed % 60).padStart(2, '0')}:00${offset === '' ? 'Z' : offset}`,
+          );
+          target = t.getTime();
+        }
+      }
       base = Math.max(target, base + tick + 1);
       tick = 0;
     };
@@ -619,7 +646,7 @@ export async function seedDemo(
       const week = Math.floor(di / 7);
       const dueSuppliers = new Set(
         SUPPLIERS.filter(
-          (_, k) => di === 0 || (weekday === (k % 5) + 1 && (week + k) % 3 === 0),
+          (_, k) => di === 0 || daysLeft === 0 || (weekday === (k % 5) + 1 && (week + k) % 3 === 0),
         ).map((s) => s.name),
       );
       if (dueSuppliers.size > 0) {
