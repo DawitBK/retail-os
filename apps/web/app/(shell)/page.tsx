@@ -26,21 +26,25 @@ export default async function DashboardPage() {
       <section aria-label="Today" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Stat
           label="Sales today"
+          icon="sales"
           value={formatMoney(d.today.revenueMinor)}
           hint={`${d.today.transactions} sales`}
         />
         <Stat
           label="Gross profit today"
+          icon="profit"
           value={formatMoney(d.today.grossProfitMinor)}
           hint={`Margin ${pct(d.today.grossMarginPct)}`}
         />
         <Stat
           label="Month to date"
+          icon="analytics"
           value={formatMoney(d.monthToDate.revenueMinor)}
           hint={`Gross margin ${pct(d.monthToDate.grossMarginPct)}`}
         />
         <Stat
           label="Net profit, month"
+          icon="statements"
           value={formatMoney(d.monthToDate.netProfitMinor)}
           tone={d.monthToDate.netProfitMinor < 0 ? 'bad' : 'good'}
           hint={`After ${formatMoney(d.monthToDate.expensesMinor)} of expenses`}
@@ -48,12 +52,13 @@ export default async function DashboardPage() {
       </section>
 
       <section aria-label="Cash and stock" className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Stat label="Cash in hand" value={formatMoney(d.cash.cashInHandMinor)} />
-        <Stat label="In the bank" value={formatMoney(d.cash.cashInBankMinor)} />
-        <Stat label="Owed to us" value={formatMoney(d.cash.receivablesMinor)} />
-        <Stat label="We owe" value={formatMoney(d.cash.payablesMinor)} />
+        <Stat label="Cash in hand" icon="cash" value={formatMoney(d.cash.cashInHandMinor)} />
+        <Stat label="In the bank" icon="bank" value={formatMoney(d.cash.cashInBankMinor)} />
+        <Stat label="Owed to us" icon="customers" value={formatMoney(d.cash.receivablesMinor)} />
+        <Stat label="We owe" icon="suppliers" value={formatMoney(d.cash.payablesMinor)} />
         <Stat
           label="Stock at cost"
+          icon="inventory"
           value={formatMoney(d.inventory.totalValueMinor)}
           hint={`${d.inventory.skus} products`}
         />

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { ReactNode } from 'react';
+import { Icon, type IconName } from '@/components/icons';
 import type { Page } from '@/lib/types';
 
 export type Tone = 'neutral' | 'good' | 'warn' | 'bad' | 'info' | 'orange';
@@ -87,17 +88,22 @@ export function Stat({
   value,
   hint,
   tone,
+  icon,
 }: {
   label: string;
   value: ReactNode;
   hint?: string;
   tone?: 'good' | 'bad';
+  icon?: IconName;
 }) {
   return (
-    <div className="card p-4">
-      <div className="text-xs font-medium tracking-wide text-muted uppercase">{label}</div>
+    <div className="card min-w-0 p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-xs font-medium tracking-wide text-muted uppercase">{label}</div>
+        {icon ? <Icon name={icon} className="text-muted" /> : null}
+      </div>
       <div
-        className={`mt-1 text-2xl font-semibold tabular-nums ${tone === 'bad' ? 'text-bad' : tone === 'good' ? 'text-good' : ''}`}
+        className={`mt-1 text-xl font-semibold tabular-nums break-words sm:text-2xl ${tone === 'bad' ? 'text-bad' : tone === 'good' ? 'text-good' : ''}`}
       >
         {value}
       </div>

@@ -64,7 +64,7 @@
   .shell {
     display: block !important;
   }
-  .shell > main {
+  .shell main {
     padding: 0 !important;
   }
   .card {
