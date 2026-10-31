@@ -2,6 +2,7 @@ import 'server-only';
 import { cookies, headers } from 'next/headers';
 import { forwardedFor } from './client-ip';
 import { redirect } from 'next/navigation';
+import { fetchWithRetry } from './resilient-fetch';
 import { ACCESS_COOKIE, API_URL } from './session';
 
 export interface Problem {
@@ -27,7 +28,7 @@ export async function api<T>(
 ): Promise<T> {
   const token = (await cookies()).get(ACCESS_COOKIE)?.value;
   if (!token) redirect('/login');
-  const res = await fetch(`${API_URL}/api/v1${path}`, {
+  const res = await fetchWithRetry(`${API_URL}/api/v1${path}`, {
     method: init.method ?? 'GET',
     headers: {
       authorization: `Bearer ${token}`,
